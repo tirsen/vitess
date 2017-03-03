@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS _vt.shard_metadata (
   ) ENGINE=InnoDB;
 
 # Admin user with all privileges.
+CREATE USER 'vt_dba'@'localhost';
 GRANT ALL ON *.* TO 'vt_dba'@'localhost';
 GRANT GRANT OPTION ON *.* TO 'vt_dba'@'localhost';
 

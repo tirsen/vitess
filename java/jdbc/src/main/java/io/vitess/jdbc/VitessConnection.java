@@ -3,6 +3,7 @@ package io.vitess.jdbc;
 import io.vitess.client.Context;
 import io.vitess.client.VTGateConn;
 import io.vitess.client.VTGateTx;
+import io.vitess.proto.Topodata;
 import io.vitess.util.CommonUtils;
 import io.vitess.util.Constants;
 import io.vitess.util.MysqlDefs;
@@ -27,11 +28,14 @@ import java.sql.Struct;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
  * Created by harshit.gangal on 23/01/16.
@@ -56,6 +60,10 @@ public class VitessConnection extends ConnectionProperties implements Connection
     private boolean readOnly = false;
     private DBProperties dbProperties;
     private final VitessJDBCUrl vitessJDBCUrl;
+
+    private String targetShard;
+    private String targetKeyspace;
+    private Pattern targetKeyspacePattern;
 
     /**
      * Constructor to Create Connection Object
@@ -848,5 +856,62 @@ public class VitessConnection extends ConnectionProperties implements Connection
 
     public String getUsername() {
         return this.vitessJDBCUrl.getUsername();
+    }
+
+    String getTargetShard() {
+        return targetShard;
+    }
+
+    String getTargetKeyspace() {
+        return targetKeyspace;
+    }
+
+    public <T> T withTargetShard(String keyspace, String shard, Callable<T> callable)
+        throws SQLException {
+        String previousKeyspace = this.targetKeyspace;
+        Pattern previousKeyspacePattern = this.targetKeyspacePattern;
+        String previousShard = this.targetShard;
+        this.targetKeyspace = keyspace;
+        this.targetKeyspacePattern = Pattern.compile("\\s" + keyspace + "\\.");
+        this.targetShard = shard;
+        try {
+            return callable.call();
+        } catch (Exception e) {
+            throw new SQLException(e);
+        } finally {
+            this.targetKeyspace = previousKeyspace;
+            this.targetKeyspacePattern = previousKeyspacePattern;
+            this.targetShard = previousShard;
+        }
+    }
+
+    /**
+     * When you target a specific shard the keyspace prefixes no longer work. They're also not
+     * needed so we just remove them from the SQL.
+     */
+    String removeTargetKeyspacePrefixes(String sql) {
+        return targetKeyspacePattern.matcher(sql).replaceAll(" ");
+    }
+
+    public List<String> getShards(String keyspace) throws SQLException {
+        checkOpen();
+        VTGateConn vtGateConn = getVtGateConn();
+        Topodata.SrvKeyspace srvKeyspace =
+            vtGateConn.getSrvKeyspace(this.createContext(Constants.DEFAULT_TIMEOUT), keyspace)
+                .checkedGet();
+        for (Topodata.SrvKeyspace.KeyspacePartition partition : srvKeyspace.getPartitionsList()) {
+            if (partition.getServedType().equals(Topodata.TabletType.MASTER)) {
+                ArrayList<String> result = new ArrayList<>(partition.getShardReferencesCount());
+                for (Topodata.ShardReference shardReference : partition.getShardReferencesList()) {
+                    result.add(shardReference.getName());
+                }
+                return result;
+            }
+        }
+        throw new SQLException("No MASTER replicas");
+    }
+
+    public boolean isTargettingShard() {
+        return targetShard != null;
     }
 }

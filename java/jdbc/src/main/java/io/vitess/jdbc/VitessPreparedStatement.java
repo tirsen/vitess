@@ -3,10 +3,12 @@ package io.vitess.jdbc;
 import io.vitess.client.Context;
 import io.vitess.client.VTGateConn;
 import io.vitess.client.VTGateTx;
+import io.vitess.client.Proto;
 import io.vitess.client.cursor.Cursor;
 import io.vitess.client.cursor.CursorWithError;
 import io.vitess.mysql.DateTime;
 import io.vitess.proto.Topodata;
+import io.vitess.proto.Vtgate;
 import io.vitess.util.Constants;
 import io.vitess.util.StringUtils;
 import java.io.InputStream;
@@ -37,6 +39,7 @@ import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -112,17 +115,30 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
             if (showSql) {
                 cursor = this.executeShow(this.sql);
             } else {
-                if (tabletType != Topodata.TabletType.MASTER || this.vitessConnection
-                    .getAutoCommit()) {
+                if (tabletType != Topodata.TabletType.MASTER || this.vitessConnection.getAutoCommit()) {
                     Context context =
                         this.vitessConnection.createContext(this.queryTimeoutInMillis);
                     if (vitessConnection.isSimpleExecute()) {
-                        cursor =
-                            vtGateConn.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
-                                .checkedGet();
+                        if (!vitessConnection.isTargettingShard()) {
+                            cursor =
+                                vtGateConn.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                                    .checkedGet();
+                        } else {
+                            cursor =
+                                vtGateConn.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections
+                                        .singletonList(vitessConnection.getTargetShard()),
+                                    this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                                    .checkedGet();
+                        }
                     } else {
-                        cursor = vtGateConn
-                            .streamExecute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields());
+                        if (!vitessConnection.isTargettingShard()) {
+                            cursor = vtGateConn
+                                .streamExecute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields());
+                        } else {
+                            cursor = vtGateConn
+                                .streamExecuteShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                                    this.bindVariables, tabletType, vitessConnection.getIncludedFields());
+                        }
                     }
                 } else {
                     VTGateTx vtGateTx = this.vitessConnection.getVtGateTx();
@@ -134,8 +150,14 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
                     }
                     Context context =
                         this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                    cursor = vtGateTx.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
-                        .checkedGet();
+                    if (!vitessConnection.isTargettingShard()) {
+                        cursor = vtGateTx.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                            .checkedGet();
+                    } else {
+                        cursor = vtGateTx.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                            this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                            .checkedGet();
+                    }
                 }
             }
 
@@ -184,8 +206,14 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
                 }
 
                 Context context = this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                cursor = vtGateTx.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
-                    .checkedGet();
+                if (!vitessConnection.isTargettingShard()) {
+                    cursor = vtGateTx.execute(context, this.sql, this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                        .checkedGet();
+                } else {
+                    cursor = vtGateTx.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                        this.bindVariables, tabletType, vitessConnection.getIncludedFields())
+                        .checkedGet();
+                }
             }
 
             if (null == cursor) {
@@ -415,7 +443,8 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
         VTGateConn vtGateConn;
         Topodata.TabletType tabletType;
         VTGateTx vtGateTx;
-        List<CursorWithError> cursorWithErrorList;
+        List<CursorWithError> cursorWithErrorList = null;
+        List<Cursor> cursorList = null;
         List<String> batchedQueries = new ArrayList<>();
 
         if(0 == batchedArgs.size()) {
@@ -430,19 +459,32 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
                 throw new SQLException(Constants.SQLExceptionMessages.DML_NOT_ON_MASTER);
             }
 
-            /**
-             * Current api does not support single query and multiple bindVariables list.
-             * So, List of the query is created to match the bindVariables list.
-             */
-            for (int i = 0; i < batchedArgs.size(); ++i) {
-                batchedQueries.add(this.sql);
-            }
-
             if (this.vitessConnection.getAutoCommit()) {
                 Context context = this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                cursorWithErrorList =
-                    vtGateConn.executeBatch(context, batchedQueries, batchedArgs, tabletType, vitessConnection.getIncludedFields())
-                        .checkedGet();
+                if (!this.vitessConnection.isTargettingShard()) {
+                    /*
+                     * Current api does not support single query and multiple bindVariables list.
+                     * So, List of the query is created to match the bindVariables list.
+                     */
+                    for (int i = 0; i < batchedArgs.size(); ++i) {
+                        batchedQueries.add(this.sql);
+                    }
+                    cursorWithErrorList =
+                        vtGateConn.executeBatch(context, batchedQueries, batchedArgs, tabletType, vitessConnection.getIncludedFields())
+                            .checkedGet();
+                } else {
+                    List<Vtgate.BoundShardQuery> batchedShardQueries = new ArrayList<>(batchedArgs.size());
+                    for (Map<String, ?> batchedArg : batchedArgs) {
+                        batchedShardQueries.add(Vtgate.BoundShardQuery.newBuilder()
+                            .setQuery(Proto.bindQuery(vitessConnection.removeTargetKeyspacePrefixes(sql), batchedArg))
+                            .setKeyspace(vitessConnection.getTargetKeyspace())
+                            .addShards(vitessConnection.getTargetShard())
+                            .build());
+                    }
+                    cursorList =
+                        vtGateConn.executeBatchShards(context, batchedShardQueries, tabletType, true, vitessConnection.getIncludedFields())
+                            .checkedGet();
+                }
             } else {
                 vtGateTx = this.vitessConnection.getVtGateTx();
                 if (null == vtGateTx) {
@@ -453,12 +495,26 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
                 }
 
                 Context context = this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                cursorWithErrorList =
-                    vtGateTx.executeBatch(context, batchedQueries, batchedArgs, tabletType, vitessConnection.getIncludedFields())
-                        .checkedGet();
+                if (!this.vitessConnection.isTargettingShard()) {
+                    cursorWithErrorList =
+                        vtGateTx.executeBatch(context, batchedQueries, batchedArgs, tabletType, vitessConnection.getIncludedFields())
+                            .checkedGet();
+                } else {
+                    List<Vtgate.BoundShardQuery> batchedShardQueries = new ArrayList<>(batchedArgs.size());
+                    for (Map<String, ?> batchedArg : batchedArgs) {
+                        batchedShardQueries.add(Vtgate.BoundShardQuery.newBuilder()
+                            .setQuery(Proto.bindQuery(vitessConnection.removeTargetKeyspacePrefixes(sql), batchedArg))
+                            .setKeyspace(vitessConnection.getTargetKeyspace())
+                            .addShards(vitessConnection.getTargetShard())
+                            .build());
+                    }
+                    cursorList =
+                        vtGateTx.executeBatchShards(context, batchedShardQueries, tabletType, vitessConnection.getIncludedFields())
+                            .checkedGet();
+                }
             }
 
-            if (null == cursorWithErrorList) {
+            if (null == cursorWithErrorList && null == cursorList) {
                 throw new SQLException(Constants.SQLExceptionMessages.METHOD_CALL_FAILED);
             }
 
