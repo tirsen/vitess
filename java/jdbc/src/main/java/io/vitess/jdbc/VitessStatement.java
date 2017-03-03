@@ -37,6 +37,7 @@ import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -126,9 +127,19 @@ public class VitessStatement implements Statement {
                     Context context =
                         this.vitessConnection.createContext(this.queryTimeoutInMillis);
                     if (vitessConnection.isSimpleExecute()) {
-                        cursor = vtGateConn.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                        if (!vitessConnection.isTargettingShard()) {
+                            cursor = vtGateConn.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                        } else {
+                            cursor = vtGateConn.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                                null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                        }
                     } else {
-                        cursor = vtGateConn.streamExecute(context, sql, null, tabletType, vitessConnection.getIncludedFields());
+                        if (!vitessConnection.isTargettingShard()) {
+                            cursor = vtGateConn.streamExecute(context, sql, null, tabletType, vitessConnection.getIncludedFields());
+                        } else {
+                            cursor = vtGateConn.streamExecuteShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                                null, tabletType, vitessConnection.getIncludedFields());
+                        }
                     }
                 } else {
                     VTGateTx vtGateTx = this.vitessConnection.getVtGateTx();
@@ -140,8 +151,13 @@ public class VitessStatement implements Statement {
                     }
                     Context context =
                         this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                /* Stream query is not suppose to run in a txn. */
-                    cursor = vtGateTx.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                    /* Stream query is not suppose to run in a txn. */
+                    if (!vitessConnection.isTargettingShard()) {
+                        cursor = vtGateTx.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                    } else {
+                        cursor = vtGateTx.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                            null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                    }
                 }
             }
 
@@ -437,7 +453,12 @@ public class VitessStatement implements Statement {
         try {
             if (this.vitessConnection.getAutoCommit()) {
                 Context context = this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                cursor = vtGateConn.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                if (!vitessConnection.isTargettingShard()) {
+                    cursor = vtGateConn.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                } else {
+                    cursor = vtGateConn.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                        null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                }
             } else {
                 vtGateTx = this.vitessConnection.getVtGateTx();
                 if (null == vtGateTx) {
@@ -448,7 +469,12 @@ public class VitessStatement implements Statement {
                 }
 
                 Context context = this.vitessConnection.createContext(this.queryTimeoutInMillis);
-                cursor = vtGateTx.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                if (!vitessConnection.isTargettingShard()) {
+                    cursor = vtGateTx.execute(context, sql, null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                } else {
+                    cursor = vtGateTx.executeShards(context, vitessConnection.removeTargetKeyspacePrefixes(sql), vitessConnection.getTargetKeyspace(), Collections.singletonList(vitessConnection.getTargetShard()),
+                        null, tabletType, vitessConnection.getIncludedFields()).checkedGet();
+                }
             }
 
             if (null == cursor) {
