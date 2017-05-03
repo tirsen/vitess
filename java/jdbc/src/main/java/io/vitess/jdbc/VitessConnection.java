@@ -915,6 +915,11 @@ public class VitessConnection extends ConnectionProperties implements Connection
         Topodata.SrvKeyspace srvKeyspace =
             vtGateConn.getSrvKeyspace(this.createContext(Constants.DEFAULT_TIMEOUT), keyspace)
                 .checkedGet();
+        for (Topodata.SrvKeyspace.ServedFrom servedFrom : srvKeyspace.getServedFromList()) {
+            if (servedFrom.getTabletType().equals(Topodata.TabletType.MASTER)) {
+                return getShards(servedFrom.getKeyspace());
+            }
+        }
         for (Topodata.SrvKeyspace.KeyspacePartition partition : srvKeyspace.getPartitionsList()) {
             if (partition.getServedType().equals(Topodata.TabletType.MASTER)) {
                 ArrayList<String> result = new ArrayList<>(partition.getShardReferencesCount());
@@ -924,7 +929,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
                 return result;
             }
         }
-        throw new SQLException("No MASTER replicas");
+        throw new SQLException("No MASTER replica for keyspace: " + keyspace);
     }
 
     public boolean isTargettingShard() {
