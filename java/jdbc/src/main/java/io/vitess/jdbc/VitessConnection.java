@@ -909,7 +909,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
         return targetKeyspacePattern.matcher(sql).replaceAll(" ");
     }
 
-    public List<String> getShards(String keyspace) throws SQLException {
+    public List<Shard> getShards(String keyspace) throws SQLException {
         checkOpen();
         VTGateConn vtGateConn = getVtGateConn();
         Topodata.SrvKeyspace srvKeyspace =
@@ -922,9 +922,9 @@ public class VitessConnection extends ConnectionProperties implements Connection
         }
         for (Topodata.SrvKeyspace.KeyspacePartition partition : srvKeyspace.getPartitionsList()) {
             if (partition.getServedType().equals(Topodata.TabletType.MASTER)) {
-                ArrayList<String> result = new ArrayList<>(partition.getShardReferencesCount());
+                ArrayList<Shard> result = new ArrayList<>(partition.getShardReferencesCount());
                 for (Topodata.ShardReference shardReference : partition.getShardReferencesList()) {
-                    result.add(shardReference.getName());
+                    result.add(new Shard(keyspace, shardReference.getName()));
                 }
                 return result;
             }
