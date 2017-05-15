@@ -77,8 +77,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
     private DBProperties dbProperties;
     private final VitessJDBCUrl vitessJDBCUrl;
 
-    private String targetShard;
-    private String targetKeyspace;
+    private Shard targetShard;
     private Pattern targetKeyspacePattern;
 
     /**
@@ -875,30 +874,44 @@ public class VitessConnection extends ConnectionProperties implements Connection
     }
 
     String getTargetShard() {
-        return targetShard;
+        return targetShard.shard;
     }
 
     String getTargetKeyspace() {
-        return targetKeyspace;
+        return targetShard.keyspace;
     }
 
-    public <T> T withTargetShard(String keyspace, String shard, Callable<T> callable)
+    public <T> T withTargetShard(Shard shard, Callable<T> callable)
         throws SQLException {
-        String previousKeyspace = this.targetKeyspace;
         Pattern previousKeyspacePattern = this.targetKeyspacePattern;
-        String previousShard = this.targetShard;
-        this.targetKeyspace = keyspace;
-        this.targetKeyspacePattern = Pattern.compile("\\s" + keyspace + "\\.");
-        this.targetShard = shard;
+        Shard previousShard = this.targetShard;
+        // We remove keyspace prefixes from SQL with the keyspace *before* we follow served from
+        // redirects.
+        this.targetKeyspacePattern = Pattern.compile("\\s" + shard.keyspace + "\\.");
+        this.targetShard = followServedFrom(shard);
         try {
             return callable.call();
         } catch (Exception e) {
             throw new SQLException(e);
         } finally {
-            this.targetKeyspace = previousKeyspace;
             this.targetKeyspacePattern = previousKeyspacePattern;
             this.targetShard = previousShard;
         }
+    }
+
+    private Shard followServedFrom(Shard shard) throws SQLException {
+        VTGateConn vtGateConn = getVtGateConn();
+        Topodata.SrvKeyspace srvKeyspace =
+            vtGateConn.getSrvKeyspace(this.createContext(Constants.DEFAULT_TIMEOUT), shard.keyspace)
+                .checkedGet();
+        for (Topodata.SrvKeyspace.ServedFrom servedFrom : srvKeyspace.getServedFromList()) {
+            if (servedFrom.getTabletType().equals(getTabletType())) {
+                // We assume there's only one shard in a served from keyspace,
+                // this assumption is pretty valid right now.
+                return new Shard(servedFrom.getKeyspace(), "0");
+            }
+        }
+        return shard;
     }
 
     /**
@@ -915,11 +928,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
         Topodata.SrvKeyspace srvKeyspace =
             vtGateConn.getSrvKeyspace(this.createContext(Constants.DEFAULT_TIMEOUT), keyspace)
                 .checkedGet();
-        for (Topodata.SrvKeyspace.ServedFrom servedFrom : srvKeyspace.getServedFromList()) {
-            if (servedFrom.getTabletType().equals(Topodata.TabletType.MASTER)) {
-                return getShards(servedFrom.getKeyspace());
-            }
-        }
+        // We ignore served from at this stage. It is handled in withTargetShard
         for (Topodata.SrvKeyspace.KeyspacePartition partition : srvKeyspace.getPartitionsList()) {
             if (partition.getServedType().equals(Topodata.TabletType.MASTER)) {
                 ArrayList<Shard> result = new ArrayList<>(partition.getShardReferencesCount());
