@@ -172,6 +172,10 @@ public class ConnectionProperties {
                 + "the first valid `X509Certificate` will be used)",
         null,
         null);
+    private ClassConnectionProperty<VTGateConnectionProvider> connectionProviderClass = new ClassConnectionProperty<VTGateConnectionProvider>(
+        Constants.Property.CONNECTION_PROVIDER_CLASS,
+        "Implementation of VTGateConnectionProvider used to resolve connections",
+        VitessVTGateManager.VTGateConnections.class);
 
     // Caching of some hot properties to avoid casting over and over
     private Topodata.TabletType tabletTypeCache;
@@ -394,6 +398,10 @@ public class ConnectionProperties {
         return keyStore.getValueAsString();
     }
 
+    public Class<? extends VTGateConnectionProvider> getConnectionProviderClass() {
+        return connectionProviderClass.getValueAsClass();
+    }
+
     public String getKeyStorePassword() {
         return keyStorePassword.getValueAsString();
     }
@@ -524,6 +532,39 @@ public class ConnectionProperties {
 
         String getValueAsString() {
             return valueAsObject == null ? null : valueAsObject.toString();
+        }
+    }
+
+    private static class ClassConnectionProperty<T> extends ConnectionProperty {
+
+        private ClassConnectionProperty(String name, String description, Class<? extends T> defaultValue) {
+            super(name, description, defaultValue);
+        }
+
+        @Override
+        void initializeFrom(String extractedValue) {
+            if (extractedValue != null) {
+                try {
+                    setValue(extractedValue);
+                } catch (ClassNotFoundException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                this.valueAsObject = this.defaultValue;
+            }
+        }
+
+        @Override
+        String[] getAllowableValues() {
+            return null;
+        }
+
+        public void setValue(String value) throws ClassNotFoundException {
+            this.valueAsObject = Class.forName(value);
+        }
+
+        @SuppressWarnings("unchecked") Class<? extends T> getValueAsClass() {
+            return (Class<T>) valueAsObject;
         }
     }
 

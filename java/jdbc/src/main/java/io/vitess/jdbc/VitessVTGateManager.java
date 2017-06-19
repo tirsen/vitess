@@ -45,21 +45,17 @@ public class VitessVTGateManager {
     /**
      * VTGateConnections object consist of vtGateIdentifire list and return vtGate object in round robin.
      */
-    public static class VTGateConnections {
+    public static class VTGateConnections implements VTGateConnectionProvider {
         private List<String> vtGateIdentifiers = new ArrayList<>();
         int counter;
 
-        /**
-         * Constructor
-         *
-         * @param connection
-         */
-        public VTGateConnections(VitessConnection connection) {
-            for (VitessJDBCUrl.HostInfo hostInfo : connection.getUrl().getHostInfos()) {
-                String identifier = getIdentifer(hostInfo.getHostname(), hostInfo.getPort(), connection.getUsername(), connection.getKeyspace());
+        @Override public void init(VitessJDBCUrl vitessJDBCUrl)
+            throws SQLException {
+            for (VitessJDBCUrl.HostInfo hostInfo : vitessJDBCUrl.getHostInfos()) {
+                String identifier = getIdentifer(hostInfo.getHostname(), hostInfo.getPort(), vitessJDBCUrl.getUsername(), vitessJDBCUrl.getKeyspace());
                 synchronized (VitessVTGateManager.class) {
                     if (!vtGateConnHashMap.containsKey(identifier)) {
-                        updateVtGateConnHashMap(identifier, hostInfo, connection);
+                        updateVtGateConnHashMap(identifier, hostInfo, vitessJDBCUrl);
                     }
                 }
                 vtGateIdentifiers.add(identifier);
@@ -73,7 +69,7 @@ public class VitessVTGateManager {
          *
          * @return
          */
-        public VTGateConn getVtGateConnInstance() {
+        public VTGateConn connect() {
             counter++;
             counter = counter % vtGateIdentifiers.size();
             return vtGateConnHashMap.get(vtGateIdentifiers.get(counter));
@@ -87,26 +83,19 @@ public class VitessVTGateManager {
 
     /**
      * Create VTGateConn and update vtGateConnHashMap.
-     *
-     * @param identifier
-     * @param hostInfo
-     * @param connection
      */
     private static void updateVtGateConnHashMap(String identifier, VitessJDBCUrl.HostInfo hostInfo,
-                                                VitessConnection connection) {
-        vtGateConnHashMap.put(identifier, getVtGateConn(hostInfo, connection));
+        VitessJDBCUrl vitessJDBCUrl) {
+        vtGateConnHashMap.put(identifier, getVtGateConn(hostInfo, vitessJDBCUrl));
     }
 
     /**
      * Create vtGateConn object with given identifier.
-     *
-     * @param hostInfo
-     * @param connection
-     * @return
      */
-    private static VTGateConn getVtGateConn(VitessJDBCUrl.HostInfo hostInfo, VitessConnection connection) {
-        final String username = connection.getUsername();
-        final String keyspace = connection.getKeyspace();
+    private static VTGateConn getVtGateConn(VitessJDBCUrl.HostInfo hostInfo, VitessJDBCUrl vitessJDBCUrl) {
+        ConnectionProperties connection = vitessJDBCUrl.getConnectionProperties();
+        final String username = vitessJDBCUrl.getUsername();
+        final String keyspace = vitessJDBCUrl.getKeyspace();
         final Context context = CommonUtils.createContext(username, Constants.CONNECTION_TIMEOUT);
         RetryingInterceptorConfig retryingConfig = getRetryingInterceptorConfig(connection);
         RpcClient client;
@@ -145,7 +134,7 @@ public class VitessVTGateManager {
         return (new VTGateConn(client, keyspace));
     }
 
-    private static RetryingInterceptorConfig getRetryingInterceptorConfig(VitessConnection conn) {
+    private static RetryingInterceptorConfig getRetryingInterceptorConfig(ConnectionProperties conn) {
         if (!conn.getGrpcRetriesEnabled()) {
             return RetryingInterceptorConfig.noOpConfig();
         }

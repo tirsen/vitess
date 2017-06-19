@@ -16,7 +16,6 @@
 
 package io.vitess.jdbc;
 
-import io.vitess.proto.Topodata;
 import io.vitess.util.Constants;
 import io.vitess.util.StringUtils;
 import java.io.UnsupportedEncodingException;
@@ -49,7 +48,12 @@ public class VitessJDBCUrl {
     private final List<HostInfo> hostInfos;
     private final String keyspace;
     private final Properties info;
+    private final ConnectionProperties connectionProperties;
     private String catalog;
+
+    public ConnectionProperties getConnectionProperties() {
+        return connectionProperties;
+    }
 
     /*
      Assuming List of vtGate ips could be given in url, separated by ","
@@ -164,6 +168,9 @@ public class VitessJDBCUrl {
         this.hostInfos = getURLHostInfos(postUrl);
         this.url = url;
         this.info = info;
+
+        this.connectionProperties = new ConnectionProperties();
+        this.connectionProperties.initializeProperties(info);
     }
 
     public String getUsername() {

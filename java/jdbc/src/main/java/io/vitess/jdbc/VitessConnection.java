@@ -65,7 +65,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
      * A Map of currently open statements
      */
     private Set<Statement> openStatements = new HashSet<>();
-    private VitessVTGateManager.VTGateConnections vTGateConnections;
+    private VTGateConnectionProvider vtGateConnectionProvider;
     private VTGateTx vtGateTx;
     private boolean closed = true;
     private boolean autoCommit = true;
@@ -83,6 +83,9 @@ public class VitessConnection extends ConnectionProperties implements Connection
     public VitessConnection(String url, Properties connectionProperties) throws SQLException {
         try {
             this.vitessJDBCUrl = new VitessJDBCUrl(url, connectionProperties);
+            Class<? extends VTGateConnectionProvider> connectionProviderClass =
+                this.vitessJDBCUrl.getConnectionProperties().getConnectionProviderClass();
+            vtGateConnectionProvider = connectionProviderClass.newInstance();
             this.closed = false;
             this.dbProperties = null;
         } catch (Exception e) {
@@ -93,8 +96,8 @@ public class VitessConnection extends ConnectionProperties implements Connection
         initializeProperties(vitessJDBCUrl.getProperties());
     }
 
-    public void connect() {
-        this.vTGateConnections = new VitessVTGateManager.VTGateConnections(this);
+    public void connect() throws SQLException {
+        this.vtGateConnectionProvider.init(vitessJDBCUrl);
     }
 
     /**
@@ -593,7 +596,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
     }
 
     public VTGateConn getVtGateConn() {
-        return vTGateConnections.getVtGateConnInstance();
+        return vtGateConnectionProvider.connect();
     }
 
     public VTGateTx getVtGateTx() {

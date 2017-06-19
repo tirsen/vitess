@@ -129,6 +129,7 @@ public class Constants {
         public static final String TRUSTSTORE = "trustStore";
         public static final String TRUSTSTORE_PASSWORD = "trustStorePassword";
         public static final String TRUST_ALIAS = "trustAlias";
+        public static final String CONNECTION_PROVIDER_CLASS = "connectionProviderClass";
 
         public static final String KEYSTORE_FULL = "javax.net.ssl.keyStore";
         public static final String KEYSTORE_PASSWORD_FULL = "javax.net.ssl.keyStorePassword";
