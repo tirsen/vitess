@@ -33,6 +33,7 @@ import (
 	"github.com/youtube/vitess/go/vt/wrangler"
 
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
+	"github.com/youtube/vitess/go/vt/vtctl"
 )
 
 var (
@@ -126,6 +127,19 @@ func InitVtctld(ts topo.Server) {
 	// Anything unrecognized gets redirected to the main app2 page.
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, appPrefix2, http.StatusFound)
+	})
+
+	http.HandleFunc("/debug/health", func(w http.ResponseWriter, r *http.Request) {
+		if err := acl.CheckAccessHTTP(r, acl.MONITORING); err != nil {
+			acl.SendError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		if err := vtctl.WorkflowManager.IsHealthy(); err != nil {
+			w.Write([]byte("not ok"))
+			return
+		}
+		w.Write([]byte("ok"))
 	})
 
 	// Serve the static files for the vtctld web app.

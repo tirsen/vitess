@@ -29,6 +29,8 @@ import (
 
 	"github.com/youtube/vitess/go/vt/topo"
 
+	"errors"
+
 	workflowpb "github.com/youtube/vitess/go/vt/proto/workflow"
 )
 
@@ -587,4 +589,12 @@ func AvailableFactories() map[string]bool {
 		result[n] = true
 	}
 	return result
+}
+
+// IsHealthy return non-error if it owns the workflow lease.
+func (m *Manager) IsHealthy() error {
+	if m.ctx {
+		return nil
+	}
+	return errors.New("vtctld does not own the lease")
 }
