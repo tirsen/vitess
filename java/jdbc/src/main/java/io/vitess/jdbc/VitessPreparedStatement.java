@@ -467,6 +467,14 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
             return new int[0];
         }
 
+        /*
+         * Current api does not support single query and multiple bindVariables list.
+         * So, List of the query is created to match the bindVariables list.
+         */
+        for (int i = 0; i < batchedArgs.size(); ++i) {
+            batchedQueries.add(this.sql);
+        }
+
         try {
             vtGateConn = this.vitessConnection.getVtGateConn();
             tabletType = this.vitessConnection.getTabletType();
@@ -478,13 +486,6 @@ public class VitessPreparedStatement extends VitessStatement implements Prepared
             if (this.vitessConnection.getAutoCommit()) {
                 Context context = this.vitessConnection.createContext(this.queryTimeoutInMillis);
                 if (!this.vitessConnection.isTargettingShard()) {
-                    /*
-                     * Current api does not support single query and multiple bindVariables list.
-                     * So, List of the query is created to match the bindVariables list.
-                     */
-                    for (int i = 0; i < batchedArgs.size(); ++i) {
-                        batchedQueries.add(this.sql);
-                    }
                     cursorWithErrorList =
                         vtGateConn.executeBatch(context, batchedQueries, batchedArgs, tabletType, vitessConnection.getIncludedFields())
                             .checkedGet();
