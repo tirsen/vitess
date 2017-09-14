@@ -478,6 +478,13 @@ public class VitessResultSet implements ResultSet {
             return null;
         }
 
+        Constants.ZeroDateTimeBehavior zeroDateTimeBehavior =
+            vitessStatement.getConnection().getZeroDateTimeBehavior();
+        if (zeroDateTimeBehavior == Constants.ZeroDateTimeBehavior.CONVERTTONULL
+            && this.row.getRawValue(columnIndex).startsWith(Constants.ZERO_DATE_TIME_PREFIX)) {
+            return null;
+        }
+
         return this.row.getTimestamp(columnIndex);
     }
 

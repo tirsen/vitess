@@ -68,6 +68,11 @@ public class ConnectionProperties {
         "Should the JDBC driver treat the MySQL type \"YEAR\" as a java.sql.Date, or as a SHORT?",
         true);
 
+    private EnumConnectionProperty<Constants.ZeroDateTimeBehavior> zeroDateTimeBehavior = new EnumConnectionProperty<>(
+        "zeroDateTimeBehavior",
+        "How should timestamps with format \"0000-00-00 00:00:00.0000\" be treated",
+        Constants.ZeroDateTimeBehavior.GARBLE);
+
     // Configs for handling irregular blobs, those with characters outside the typical 4-byte encodings
     private BooleanConnectionProperty useBlobToStoreUTF8OutsideBMP = new BooleanConnectionProperty(
         "useBlobToStoreUTF8OutsideBMP",
@@ -286,6 +291,10 @@ public class ConnectionProperties {
 
     public String getUtf8OutsideBmpExcludedColumnNamePattern() {
         return utf8OutsideBmpExcludedColumnNamePattern.getValueAsString();
+    }
+
+    public Constants.ZeroDateTimeBehavior getZeroDateTimeBehavior() {
+        return zeroDateTimeBehavior.getValueAsEnum();
     }
 
     public void setUtf8OutsideBmpExcludedColumnNamePattern(String pattern) {
