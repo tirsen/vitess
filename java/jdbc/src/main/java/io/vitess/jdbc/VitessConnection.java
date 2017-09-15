@@ -42,6 +42,7 @@ import java.sql.Savepoint;
 import java.sql.Statement;
 import java.sql.Struct;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -928,6 +929,17 @@ public class VitessConnection extends ConnectionProperties implements Connection
         Topodata.SrvKeyspace srvKeyspace =
             vtGateConn.getSrvKeyspace(this.createContext(Constants.DEFAULT_TIMEOUT), keyspace)
                 .checkedGet();
+
+        for (Topodata.SrvKeyspace.ServedFrom servedFrom : srvKeyspace.getServedFromList()) {
+            if (servedFrom.getTabletType().equals(getTabletType())) {
+                // We assume a served from keyspace is unsharded. We can't return the servedFrom
+                // keyspace at this point because we still munge away the keyspace name from the
+                // SQL before we send it to the target shard. So we follow the served from in
+                // withTargetShard instead, after munging the SQL.
+                return Collections.singletonList(new Shard(keyspace, "0"));
+            }
+        }
+
         // We ignore served from at this stage. It is handled in withTargetShard
         for (Topodata.SrvKeyspace.KeyspacePartition partition : srvKeyspace.getPartitionsList()) {
             if (partition.getServedType().equals(Topodata.TabletType.MASTER)) {
