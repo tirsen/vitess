@@ -898,7 +898,7 @@ func agentRPCTestStartBlpPanic(ctx context.Context, t *testing.T, client tmclien
 
 var testRunBlpUntilWaitTime = 3 * time.Minute
 
-func (fra *fakeRPCAgent) RunBlpUntil(ctx context.Context, bpl []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration) (string, error) {
+func (fra *fakeRPCAgent) RunBlpUntil(ctx context.Context, bpl []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration, ignoreServerIDs string) (string, error) {
 	if fra.panics {
 		panic(fmt.Errorf("test-triggered panic"))
 	}
@@ -908,12 +908,12 @@ func (fra *fakeRPCAgent) RunBlpUntil(ctx context.Context, bpl []*tabletmanagerda
 }
 
 func agentRPCTestRunBlpUntil(ctx context.Context, t *testing.T, client tmclient.TabletManagerClient, tablet *topodatapb.Tablet) {
-	rp, err := client.RunBlpUntil(ctx, tablet, testBlpPositionList, testRunBlpUntilWaitTime)
+	rp, err := client.RunBlpUntil(ctx, tablet, testBlpPositionList, testRunBlpUntilWaitTime, "")
 	compareError(t, "RunBlpUntil", err, rp, testReplicationPosition)
 }
 
 func agentRPCTestRunBlpUntilPanic(ctx context.Context, t *testing.T, client tmclient.TabletManagerClient, tablet *topodatapb.Tablet) {
-	_, err := client.RunBlpUntil(ctx, tablet, testBlpPositionList, testRunBlpUntilWaitTime)
+	_, err := client.RunBlpUntil(ctx, tablet, testBlpPositionList, testRunBlpUntilWaitTime, "")
 	expectHandleRPCPanic(t, "RunBlpUntil", true /*verbose*/, err)
 }
 

@@ -137,3 +137,16 @@ func TestCompareRows(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterGTIDSet(t *testing.T) {
+	masterPos := "MySQL56/21a59038-a4b5-11e7-8a38-fee36acf0706:1-5618247,4e6a65ca-a4b9-11e7-8a54-fea8a82ab9b9:1-9286512,7fd10d31-9758-11e7-b317-fe98996d8bc3:1-11809064,afa76209-85e1-11e6-bbe0-fee36acf0706:1-26800254,c20d90e5-c306-11e6-8a98-fe63980e86b0:1-37692342,ff336ec0-ac46-11e7-bb94-fe31873f8890:1"
+	ignoreServerIDs := "ff336ec0-ac46-11e7-bb94-fe31873f8890"
+	want := "MySQL56/21a59038-a4b5-11e7-8a38-fee36acf0706:1-5618247,4e6a65ca-a4b9-11e7-8a54-fea8a82ab9b9:1-9286512,7fd10d31-9758-11e7-b317-fe98996d8bc3:1-11809064,afa76209-85e1-11e6-bbe0-fee36acf0706:1-26800254,c20d90e5-c306-11e6-8a98-fe63980e86b0:1-37692342"
+	got, err := filterPosition(masterPos, ignoreServerIDs)
+	if err != nil {
+		t.Error(err)
+	}
+	if got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

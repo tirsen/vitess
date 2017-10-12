@@ -332,6 +332,31 @@ func (set Mysql56GTIDSet) AddGTID(gtid GTID) GTIDSet {
 	return newSet
 }
 
+// ExcludeSID implements GTIDSet.
+func (set Mysql56GTIDSet) ExcludeSID(sidString string) (GTIDSet, error) {
+	removeSid, err := ParseSID(sidString)
+	if err != nil {
+		return set, err
+	}
+	// If the sid is not in set, we can return the same instance.
+	// This is safe because GTIDSets are immutable.
+	if set[removeSid] == nil {
+		return set, nil
+	}
+
+	// Make a copy and remove the sid.
+	// This function is not supposed to modify the original set.
+	newSet := make(Mysql56GTIDSet)
+
+	for sid, intervals := range set {
+		if removeSid != sid {
+			newSet[sid] = intervals
+		}
+	}
+
+	return newSet, nil
+}
+
 // SIDBlock returns the binary encoding of a MySQL 5.6 GTID set as expected
 // by internal commands that refer to an "SID block".
 //

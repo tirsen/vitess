@@ -39,6 +39,8 @@ import (
 	"github.com/youtube/vitess/go/vt/vttablet/queryservice"
 	"github.com/youtube/vitess/go/vt/vttablet/tabletconn"
 
+	"github.com/youtube/vitess/go/mysql"
+	"github.com/youtube/vitess/go/vt/binlog/binlogplayer"
 	querypb "github.com/youtube/vitess/go/vt/proto/query"
 	tabletmanagerdatapb "github.com/youtube/vitess/go/vt/proto/tabletmanagerdata"
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
@@ -566,4 +568,16 @@ func (rd *RowDiffer) Go(log logutil.Logger) (dr DiffReport, err error) {
 		advanceLeft = true
 		advanceRight = true
 	}
+}
+
+func filterPosition(positionStr, ignoreServerIDs string) (string, error) {
+	position, err := mysql.DecodePosition(positionStr)
+	if err != nil {
+		return positionStr, err
+	}
+	position, err = binlogplayer.FilterPosition(position, ignoreServerIDs)
+	if err != nil {
+		return positionStr, err
+	}
+	return position.GTIDSet.Flavor() + "/" + position.GTIDSet.String(), nil
 }

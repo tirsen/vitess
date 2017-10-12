@@ -316,7 +316,7 @@ func (s *server) RunBlpUntil(ctx context.Context, request *tabletmanagerdatapb.R
 	defer s.agent.HandleRPCPanic(ctx, "RunBlpUntil", request, response, true /*verbose*/, &err)
 	ctx = callinfo.GRPCCallInfo(ctx)
 	response = &tabletmanagerdatapb.RunBlpUntilResponse{}
-	position, err := s.agent.RunBlpUntil(ctx, request.BlpPositions, time.Duration(request.WaitTimeout))
+	position, err := s.agent.RunBlpUntil(ctx, request.BlpPositions, time.Duration(request.WaitTimeout), request.IgnoreServerIds)
 	if err == nil {
 		response.Position = position
 	}

@@ -332,6 +332,7 @@ message StartBlpResponse {
 message RunBlpUntilRequest {
   repeated BlpPosition blp_positions = 1;
   int64 wait_timeout = 2;
+  string ignore_server_ids = 3;
 }
 
 message RunBlpUntilResponse {

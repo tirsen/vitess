@@ -148,6 +148,11 @@ func (gtid MariadbGTID) AddGTID(other GTID) GTIDSet {
 	return mdbOther
 }
 
+// ExcludeSID implements GTIDSet.ExcludeSID().
+func (gtid MariadbGTID) ExcludeSID(sidString string) (GTIDSet, error) {
+	return gtid, fmt.Errorf("GTIDSet filtering not implemented for MariaDB yet")
+}
+
 func init() {
 	gtidParsers[mariadbFlavorID] = parseMariadbGTID
 	gtidSetParsers[mariadbFlavorID] = parseMariadbGTIDSet

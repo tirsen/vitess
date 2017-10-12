@@ -219,7 +219,7 @@ func (client *FakeTabletManagerClient) StartBlp(ctx context.Context, tablet *top
 }
 
 // RunBlpUntil is part of the tmclient.TabletManagerClient interface.
-func (client *FakeTabletManagerClient) RunBlpUntil(ctx context.Context, tablet *topodatapb.Tablet, positions []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration) (string, error) {
+func (client *FakeTabletManagerClient) RunBlpUntil(ctx context.Context, tablet *topodatapb.Tablet, positions []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration, ignoreServerIDs string) (string, error) {
 	return "", nil
 }
 

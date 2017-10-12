@@ -105,6 +105,9 @@ type BinlogPlayerController struct {
 	// stopPosition contains the stopping point for this player, if any.
 	stopPosition string
 
+	// ignoreServerIDs is a comma-separated list of server IDs (generally UUIDs) that are ignored when comparing stopPosition to actual position.
+	ignoreServerIDs string
+
 	// information about the individual tablet we're replicating from.
 	sourceTablet *topodatapb.TabletAlias
 
@@ -156,7 +159,7 @@ func (bpc *BinlogPlayerController) Start(ctx context.Context) {
 }
 
 // StartUntil will start the Player until we reach the given position.
-func (bpc *BinlogPlayerController) StartUntil(ctx context.Context, stopPos string) error {
+func (bpc *BinlogPlayerController) StartUntil(ctx context.Context, stopPos string, ignoreServerIDs string) error {
 	bpc.playerMutex.Lock()
 	defer bpc.playerMutex.Unlock()
 	if bpc.ctx != nil {
@@ -166,6 +169,7 @@ func (bpc *BinlogPlayerController) StartUntil(ctx context.Context, stopPos strin
 	bpc.ctx, bpc.cancel = context.WithCancel(ctx)
 	bpc.done = make(chan struct{}, 1)
 	bpc.stopPosition = stopPos
+	bpc.ignoreServerIDs = ignoreServerIDs
 	go bpc.Loop()
 	return nil
 }
@@ -355,7 +359,7 @@ func (bpc *BinlogPlayerController) Iteration() (err error) {
 		}
 
 		// tables, just get them
-		player, err := binlogplayer.NewBinlogPlayerTables(vtClient, tablet, tables, bpc.sourceShard.Uid, startPosition, bpc.stopPosition, bpc.binlogPlayerStats)
+		player, err := binlogplayer.NewBinlogPlayerTables(vtClient, tablet, tables, bpc.sourceShard.Uid, startPosition, bpc.stopPosition, bpc.ignoreServerIDs, bpc.binlogPlayerStats)
 		if err != nil {
 			return fmt.Errorf("NewBinlogPlayerTables failed: %v", err)
 		}
@@ -368,7 +372,7 @@ func (bpc *BinlogPlayerController) Iteration() (err error) {
 		return fmt.Errorf("Source shard %v doesn't overlap destination shard %v", bpc.sourceShard.KeyRange, bpc.keyRange)
 	}
 
-	player, err := binlogplayer.NewBinlogPlayerKeyRange(vtClient, tablet, overlap, bpc.sourceShard.Uid, startPosition, bpc.stopPosition, bpc.binlogPlayerStats)
+	player, err := binlogplayer.NewBinlogPlayerKeyRange(vtClient, tablet, overlap, bpc.sourceShard.Uid, startPosition, bpc.stopPosition, bpc.ignoreServerIDs, bpc.binlogPlayerStats)
 	if err != nil {
 		return fmt.Errorf("NewBinlogPlayerKeyRange failed: %v", err)
 	}
@@ -620,7 +624,7 @@ func (blm *BinlogPlayerMap) BlpPositionList() ([]*tabletmanagerdatapb.BlpPositio
 
 // RunUntil will run all the players until they reach the given position.
 // Holds the map lock during that exercise, shouldn't take long at all.
-func (blm *BinlogPlayerMap) RunUntil(ctx context.Context, blpPositionList []*tabletmanagerdatapb.BlpPosition, waitTimeout time.Duration) error {
+func (blm *BinlogPlayerMap) RunUntil(ctx context.Context, blpPositionList []*tabletmanagerdatapb.BlpPosition, waitTimeout time.Duration, ignoreServerIDs string) error {
 	// lock and check state
 	blm.mu.Lock()
 	defer blm.mu.Unlock()
@@ -636,7 +640,7 @@ func (blm *BinlogPlayerMap) RunUntil(ctx context.Context, blpPositionList []*tab
 		if !ok {
 			return fmt.Errorf("no binlog player for Uid %v", blpPosition.Uid)
 		}
-		if err := bpc.StartUntil(ctx, blpPosition.Position); err != nil {
+		if err := bpc.StartUntil(ctx, blpPosition.Position, ignoreServerIDs); err != nil {
 			return err
 		}
 		startedPlayers[i] = bpc

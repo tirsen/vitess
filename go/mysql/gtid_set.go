@@ -45,6 +45,9 @@ type GTIDSet interface {
 
 	// AddGTID returns a new GTIDSet that is expanded to contain the given GTID.
 	AddGTID(GTID) GTIDSet
+
+	// ExcludeSID returns a new GTID Set with all the GTIDs issued from the specified server removed.
+	ExcludeSID(sid string) (GTIDSet, error)
 }
 
 // gtidSetParsers maps flavor names to parser functions. It is used by
