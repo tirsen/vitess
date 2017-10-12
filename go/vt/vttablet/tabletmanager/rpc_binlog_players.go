@@ -72,7 +72,7 @@ func (agent *ActionAgent) StartBlp(ctx context.Context) error {
 
 // RunBlpUntil runs the binlog player server until the position is reached,
 // and returns the current mysql master replication position.
-func (agent *ActionAgent) RunBlpUntil(ctx context.Context, bpl []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration) (string, error) {
+func (agent *ActionAgent) RunBlpUntil(ctx context.Context, bpl []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration, ignoreServerIDs string) (string, error) {
 	if err := agent.lock(ctx); err != nil {
 		return "", err
 	}
@@ -81,7 +81,7 @@ func (agent *ActionAgent) RunBlpUntil(ctx context.Context, bpl []*tabletmanagerd
 	if agent.BinlogPlayerMap == nil {
 		return "", fmt.Errorf("No BinlogPlayerMap configured")
 	}
-	if err := agent.BinlogPlayerMap.RunUntil(ctx, bpl, waitTime); err != nil {
+	if err := agent.BinlogPlayerMap.RunUntil(ctx, bpl, waitTime, ignoreServerIDs); err != nil {
 		return "", err
 	}
 	pos, err := agent.MysqlDaemon.MasterPosition()

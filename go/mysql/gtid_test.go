@@ -208,4 +208,5 @@ func (f fakeGTID) Equal(other GTIDSet) bool {
 	}
 	return f == otherFake
 }
-func (fakeGTID) AddGTID(GTID) GTIDSet { return nil }
+func (fakeGTID) AddGTID(GTID) GTIDSet               { return nil }
+func (fakeGTID) ExcludeSID(string) (GTIDSet, error) { return nil, nil }

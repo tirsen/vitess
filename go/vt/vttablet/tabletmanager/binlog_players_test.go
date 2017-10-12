@@ -587,7 +587,7 @@ func TestBinlogPlayerMapHorizontalSplitStopStartUntil(t *testing.T) {
 			Uid:      1,
 			Position: "MariaDB/0-1-1235",
 		},
-	}, 5*time.Second); err != nil {
+	}, 5*time.Second, ""); err != nil {
 		t.Fatalf("RunUntil failed: %v", err)
 	}
 

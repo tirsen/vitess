@@ -93,7 +93,7 @@ type RPCAgent interface {
 
 	StartBlp(ctx context.Context) error
 
-	RunBlpUntil(ctx context.Context, bpl []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration) (string, error)
+	RunBlpUntil(ctx context.Context, bpl []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration, ignoreServerIDs string) (string, error)
 
 	// Reparenting related functions
 

@@ -35,6 +35,8 @@ import (
 	"github.com/youtube/vitess/go/stats"
 	"github.com/youtube/vitess/go/sync2"
 
+	"strings"
+
 	binlogdatapb "github.com/youtube/vitess/go/vt/proto/binlogdata"
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
 	"github.com/youtube/vitess/go/vt/throttler"
@@ -110,25 +112,27 @@ type BinlogPlayer struct {
 	tables []string
 
 	// common to all
-	uid            uint32
-	position       mysql.Position
-	stopPosition   mysql.Position
-	blplStats      *Stats
-	defaultCharset *binlogdatapb.Charset
-	currentCharset *binlogdatapb.Charset
+	uid             uint32
+	position        mysql.Position
+	stopPosition    mysql.Position
+	ignoreServerIDs string
+	blplStats       *Stats
+	defaultCharset  *binlogdatapb.Charset
+	currentCharset  *binlogdatapb.Charset
 }
 
 // NewBinlogPlayerKeyRange returns a new BinlogPlayer pointing at the server
 // replicating the provided keyrange, starting at the startPosition,
 // and updating _vt.blp_checkpoint with uid=startPosition.Uid.
 // If !stopPosition.IsZero(), it will stop when reaching that position.
-func NewBinlogPlayerKeyRange(dbClient VtClient, tablet *topodatapb.Tablet, keyRange *topodatapb.KeyRange, uid uint32, startPosition string, stopPosition string, blplStats *Stats) (*BinlogPlayer, error) {
+func NewBinlogPlayerKeyRange(dbClient VtClient, tablet *topodatapb.Tablet, keyRange *topodatapb.KeyRange, uid uint32, startPosition string, stopPosition string, ignoreServerIDs string, blplStats *Stats) (*BinlogPlayer, error) {
 	result := &BinlogPlayer{
-		tablet:    tablet,
-		dbClient:  dbClient,
-		keyRange:  keyRange,
-		uid:       uid,
-		blplStats: blplStats,
+		tablet:          tablet,
+		dbClient:        dbClient,
+		keyRange:        keyRange,
+		uid:             uid,
+		blplStats:       blplStats,
+		ignoreServerIDs: ignoreServerIDs,
 	}
 	var err error
 	result.position, err = mysql.DecodePosition(startPosition)
@@ -148,13 +152,14 @@ func NewBinlogPlayerKeyRange(dbClient VtClient, tablet *topodatapb.Tablet, keyRa
 // replicating the provided tables, starting at the startPosition,
 // and updating _vt.blp_checkpoint with uid=startPosition.Uid.
 // If !stopPosition.IsZero(), it will stop when reaching that position.
-func NewBinlogPlayerTables(dbClient VtClient, tablet *topodatapb.Tablet, tables []string, uid uint32, startPosition string, stopPosition string, blplStats *Stats) (*BinlogPlayer, error) {
+func NewBinlogPlayerTables(dbClient VtClient, tablet *topodatapb.Tablet, tables []string, uid uint32, startPosition string, stopPosition string, ignoreServerIDs string, blplStats *Stats) (*BinlogPlayer, error) {
 	result := &BinlogPlayer{
-		tablet:    tablet,
-		dbClient:  dbClient,
-		tables:    tables,
-		uid:       uid,
-		blplStats: blplStats,
+		tablet:          tablet,
+		dbClient:        dbClient,
+		tables:          tables,
+		uid:             uid,
+		blplStats:       blplStats,
+		ignoreServerIDs: ignoreServerIDs,
 	}
 	var err error
 	result.position, err = mysql.DecodePosition(startPosition)
@@ -346,14 +351,26 @@ func (blp *BinlogPlayer) ApplyBinlogEvents(ctx context.Context) error {
 	}
 	if !blp.stopPosition.IsZero() {
 		// We need to stop at some point. Sanity check the point.
+
+		// Remove the ignored server IDs from the positions.
+		position, err := FilterPosition(blp.position, blp.ignoreServerIDs)
+		if err != nil {
+			return err
+		}
+		stopPosition, err := FilterPosition(blp.position, blp.ignoreServerIDs)
+		if err != nil {
+			return err
+		}
+
+		// Then compare them.
 		switch {
-		case blp.position.Equal(blp.stopPosition):
-			log.Infof("Not starting BinlogPlayer, we're already at the desired position %v", blp.stopPosition)
+		case position.Equal(stopPosition):
+			log.Infof("Not starting BinlogPlayer, we're already at the desired position %v", stopPosition)
 			return nil
-		case blp.position.AtLeast(blp.stopPosition):
-			return fmt.Errorf("starting point %v greater than stopping point %v", blp.position, blp.stopPosition)
+		case position.AtLeast(stopPosition):
+			return fmt.Errorf("starting point %v greater than stopping point %v", position, stopPosition)
 		default:
-			log.Infof("Will stop player when reaching %v", blp.stopPosition)
+			log.Infof("Will stop player when reaching %v", stopPosition)
 		}
 	}
 
@@ -517,4 +534,16 @@ func QueryBlpCheckpoint(index uint32) string {
 // table.
 func QueryBlpThrottlerSettings(index uint32) string {
 	return fmt.Sprintf("SELECT max_tps, max_replication_lag FROM _vt.blp_checkpoint WHERE source_shard_uid=%v", index)
+}
+
+// FilterPosition removes excluded server UUIDs from the position
+func FilterPosition(position mysql.Position, ignoreServerIDs string) (result mysql.Position, err error) {
+	result.GTIDSet = position.GTIDSet
+	for _, sid := range strings.Split(ignoreServerIDs, ",") {
+		result.GTIDSet, err = result.GTIDSet.ExcludeSID(sid)
+		if err != nil {
+			return
+		}
+	}
+	return
 }

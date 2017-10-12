@@ -69,6 +69,7 @@ var verticalSplitDiffTemplate2 = mustParseTemplate("verticalSplitDiff2", vertica
 
 func commandVerticalSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) (Worker, error) {
 	minHealthyRdonlyTablets := subFlags.Int("min_healthy_rdonly_tablets", defaultMinHealthyRdonlyTablets, "minimum number of healthy RDONLY tablets before taking out one")
+	ignoreServerIDs := subFlags.String("ignore_server_ids", "", "list of server UUIDs that are ignored when comparing GTID sets")
 	if err := subFlags.Parse(args); err != nil {
 		return nil, err
 	}
@@ -80,7 +81,7 @@ func commandVerticalSplitDiff(wi *Instance, wr *wrangler.Wrangler, subFlags *fla
 	if err != nil {
 		return nil, err
 	}
-	return NewVerticalSplitDiffWorker(wr, wi.cell, keyspace, shard, *minHealthyRdonlyTablets), nil
+	return NewVerticalSplitDiffWorker(wr, wi.cell, keyspace, shard, *minHealthyRdonlyTablets, *ignoreServerIDs), nil
 }
 
 // shardsWithTablesSources returns all the shards that have SourceShards set
@@ -178,9 +179,11 @@ func interactiveVerticalSplitDiff(ctx context.Context, wi *Instance, wr *wrangle
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("cannot parse minHealthyRdonlyTablets: %s", err)
 	}
+	// TODO support this in the web interface
+	ignoreServerIDs := ""
 
 	// start the diff job
-	wrk := NewVerticalSplitDiffWorker(wr, wi.cell, keyspace, shard, int(minHealthyRdonlyTablets))
+	wrk := NewVerticalSplitDiffWorker(wr, wi.cell, keyspace, shard, int(minHealthyRdonlyTablets), ignoreServerIDs)
 	return wrk, nil, nil, nil
 }
 

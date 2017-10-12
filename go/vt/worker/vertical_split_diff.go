@@ -45,6 +45,7 @@ type VerticalSplitDiffWorker struct {
 	shard                   string
 	minHealthyRdonlyTablets int
 	cleaner                 *wrangler.Cleaner
+	ignoreServerIDs         string
 
 	// populated during WorkerStateInit, read-only after that
 	keyspaceInfo *topo.KeyspaceInfo
@@ -60,7 +61,7 @@ type VerticalSplitDiffWorker struct {
 }
 
 // NewVerticalSplitDiffWorker returns a new VerticalSplitDiffWorker object.
-func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, minHealthyRdonlyTablets int) Worker {
+func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string, minHealthyRdonlyTablets int, ignoreServerIDs string) Worker {
 	return &VerticalSplitDiffWorker{
 		StatusWorker: NewStatusWorker(),
 		wr:           wr,
@@ -69,6 +70,7 @@ func NewVerticalSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard str
 		shard:        shard,
 		minHealthyRdonlyTablets: minHealthyRdonlyTablets,
 		cleaner:                 &wrangler.Cleaner{},
+		ignoreServerIDs:         ignoreServerIDs,
 	}
 }
 
@@ -267,7 +269,11 @@ func (vsdw *VerticalSplitDiffWorker) synchronizeReplication(ctx context.Context)
 	}
 
 	// stop replication
-	vsdw.wr.Logger().Infof("Stopping slave %v at a minimum of %v", topoproto.TabletAliasString(vsdw.sourceAlias), blpPos.Position)
+	slaveMinPos, err := filterPosition(blpPos.Position, vsdw.ignoreServerIDs)
+	if err != nil {
+		return err
+	}
+	vsdw.wr.Logger().Infof("Stopping slave %v at a minimum of %v", topoproto.TabletAliasString(vsdw.sourceAlias), slaveMinPos)
 	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
 	sourceTablet, err := vsdw.wr.TopoServer().GetTablet(shortCtx, vsdw.sourceAlias)
 	cancel()
@@ -275,10 +281,10 @@ func (vsdw *VerticalSplitDiffWorker) synchronizeReplication(ctx context.Context)
 		return err
 	}
 	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-	stoppedAt, err := vsdw.wr.TabletManagerClient().StopSlaveMinimum(shortCtx, sourceTablet.Tablet, blpPos.Position, *remoteActionsTimeout)
+	stoppedAt, err := vsdw.wr.TabletManagerClient().StopSlaveMinimum(shortCtx, sourceTablet.Tablet, slaveMinPos, *remoteActionsTimeout)
 	cancel()
 	if err != nil {
-		return fmt.Errorf("cannot stop slave %v at right binlog position %v: %v", topoproto.TabletAliasString(vsdw.sourceAlias), blpPos.Position, err)
+		return fmt.Errorf("cannot stop slave %v at right binlog position %v: %v", topoproto.TabletAliasString(vsdw.sourceAlias), slaveMinPos, err)
 	}
 	stopPositionList[0] = &tabletmanagerdatapb.BlpPosition{
 		Uid:      ss.Uid,
@@ -293,10 +299,14 @@ func (vsdw *VerticalSplitDiffWorker) synchronizeReplication(ctx context.Context)
 	//     replication up to the new list of positions
 	vsdw.wr.Logger().Infof("Restarting master %v until it catches up to %v", topoproto.TabletAliasString(vsdw.shardInfo.MasterAlias), stopPositionList)
 	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-	masterPos, err := vsdw.wr.TabletManagerClient().RunBlpUntil(shortCtx, masterInfo.Tablet, stopPositionList, *remoteActionsTimeout)
+	masterPos, err := vsdw.wr.TabletManagerClient().RunBlpUntil(shortCtx, masterInfo.Tablet, stopPositionList, *remoteActionsTimeout, vsdw.ignoreServerIDs)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("RunBlpUntil on %v until %v failed: %v", topoproto.TabletAliasString(vsdw.shardInfo.MasterAlias), stopPositionList, err)
+	}
+	masterPos, err = filterPosition(masterPos, vsdw.ignoreServerIDs)
+	if err != nil {
+		return err
 	}
 
 	// 4 - wait until the destination tablet is equal or passed

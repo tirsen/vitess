@@ -564,15 +564,16 @@ func (client *Client) StartBlp(ctx context.Context, tablet *topodatapb.Tablet) e
 }
 
 // RunBlpUntil is part of the tmclient.TabletManagerClient interface.
-func (client *Client) RunBlpUntil(ctx context.Context, tablet *topodatapb.Tablet, positions []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration) (string, error) {
+func (client *Client) RunBlpUntil(ctx context.Context, tablet *topodatapb.Tablet, positions []*tabletmanagerdatapb.BlpPosition, waitTime time.Duration, ignoreServerIDs string) (string, error) {
 	cc, c, err := client.dial(tablet)
 	if err != nil {
 		return "", err
 	}
 	defer cc.Close()
 	response, err := c.RunBlpUntil(ctx, &tabletmanagerdatapb.RunBlpUntilRequest{
-		BlpPositions: positions,
-		WaitTimeout:  int64(waitTime),
+		BlpPositions:    positions,
+		WaitTimeout:     int64(waitTime),
+		IgnoreServerIds: ignoreServerIDs,
 	})
 	if err != nil {
 		return "", err
