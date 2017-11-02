@@ -147,16 +147,21 @@ func (dbc *DBConn) Stream(ctx context.Context, query string, callback func(*sqlt
 	span.StartClient("DBConn.Stream")
 	defer span.Finish()
 
+	start := time.Now()
+	var lastSend time.Time
+	var rowCount int
 	for attempt := 1; attempt <= 2; attempt++ {
 		resultSent := false
 		err := dbc.streamOnce(
 			ctx,
 			query,
 			func(r *sqltypes.Result) error {
+				lastSend = time.Now()
 				if !resultSent {
 					resultSent = true
 					r = r.StripMetadata(includedFields)
 				}
+				rowCount += len(r.Rows)
 				return callback(r)
 			},
 			streamBufferSize,
@@ -166,6 +171,7 @@ func (dbc *DBConn) Stream(ctx context.Context, query string, callback func(*sqlt
 			return nil
 		case !mysql.IsConnErr(err) || resultSent || attempt == 2:
 			// MySQL error that isn't due to a connection issue
+			log.Infof("query: %s failed, start: %v, lastSend: %v, errorTime: %v, idle-diff: %v, rowCount: %d, attempt: %d", start, lastSend, time.Now(), time.Since(lastSend), rowCount, attempt)
 			return err
 		}
 		err2 := dbc.reconnect()
