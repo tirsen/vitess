@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	log "github.com/golang/glog"
 	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/stats"
@@ -39,11 +40,14 @@ type DBConnection struct {
 func (dbc *DBConnection) handleError(err error) {
 	if sqlErr, ok := err.(*mysql.SQLError); ok {
 		if sqlErr.Number() >= 2000 && sqlErr.Number() <= 2018 { // mysql connection errors
+			log.Infof("handleError: closing connection due to %v", sqlErr.Number())
 			dbc.Close()
 		}
 		if sqlErr.Number() == 1317 { // Query was interrupted
 			dbc.Close()
 		}
+	} else {
+		log.Infof("handleError: generic error (%T): %v", err, err)
 	}
 }
 

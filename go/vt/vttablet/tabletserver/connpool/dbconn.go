@@ -171,7 +171,7 @@ func (dbc *DBConn) Stream(ctx context.Context, query string, callback func(*sqlt
 			return nil
 		case !mysql.IsConnErr(err) || resultSent || attempt == 2:
 			// MySQL error that isn't due to a connection issue
-			log.Infof("query: %s failed, start: %v, lastSend: %v, errorTime: %v, idle-diff: %v, rowCount: %d, attempt: %d", start, lastSend, time.Now(), time.Since(lastSend), rowCount, attempt)
+			log.Infof("query: %s failed, start: %v, lastSend: %v, errorTime: %v, idle-diff: %v, rowCount: %d, attempt: %d", query, start, lastSend, time.Now(), time.Since(lastSend), rowCount, attempt)
 			return err
 		}
 		err2 := dbc.reconnect()
@@ -266,8 +266,10 @@ func (dbc *DBConn) Recycle() {
 	case dbc.pool == nil:
 		dbc.Close()
 	case dbc.conn.IsClosed():
+		log.Infof("connection closed: recycling nil")
 		dbc.pool.Put(nil)
 	default:
+		log.Infof("connection not closed: recycling conn")
 		dbc.pool.Put(dbc)
 	}
 }
