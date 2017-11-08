@@ -178,6 +178,12 @@ public class ConnectionProperties {
         null,
         null);
 
+    private LongConnectionProperty timeout = new LongConnectionProperty(
+        "timeout",
+        "The default timeout, in millis, to use for queries, connections, and transaction commit/rollback. Query timeout can be overridden by explicitly calling setQueryTimeout",
+        Constants.DEFAULT_TIMEOUT
+    );
+
     // Caching of some hot properties to avoid casting over and over
     private Topodata.TabletType tabletTypeCache;
     private Query.ExecuteOptions.IncludedFields includedFieldsCache;
@@ -425,6 +431,14 @@ public class ConnectionProperties {
 
     public String getTrustAlias() {
         return trustAlias.getValueAsString();
+    }
+
+    public long getTimeout() {
+        return timeout.getValueAsLong();
+    }
+
+    public void setTimeout(long timeout) {
+        this.timeout.setValue(timeout);
     }
 
     abstract static class ConnectionProperty {
