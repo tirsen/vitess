@@ -110,6 +110,8 @@ public class VitessVTGateManager {
         final Context context = CommonUtils.createContext(username, Constants.CONNECTION_TIMEOUT);
         RetryingInterceptorConfig retryingConfig = getRetryingInterceptorConfig(connection);
         RpcClient client;
+        GrpcClientFactory clientFactory = new GrpcClientFactory(retryingConfig);
+        clientFactory.setMaxMessageSize(connection.getMaxMessageSize());
         if (connection.getUseSSL()) {
             final String keyStorePath = connection.getKeyStore() != null
                     ? connection.getKeyStore() : System.getProperty(Constants.Property.KEYSTORE_FULL);
@@ -135,9 +137,9 @@ public class VitessVTGateManager {
                     .trustStorePassword(trustStorePassword)
                     .trustAlias(trustAlias);
 
-            client = new GrpcClientFactory(retryingConfig).createTls(context, hostInfo.toString(), tlsOptions);
+            client = clientFactory.createTls(context, hostInfo.toString(), tlsOptions);
         } else {
-            client = new GrpcClientFactory(retryingConfig).create(context, hostInfo.toString());
+            client = clientFactory.create(context, hostInfo.toString());
         }
         if (null == keyspace) {
             return (new VTGateConn(client));

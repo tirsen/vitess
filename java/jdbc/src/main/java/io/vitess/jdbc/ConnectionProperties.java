@@ -183,6 +183,12 @@ public class ConnectionProperties {
         "The default timeout, in millis, to use for queries, connections, and transaction commit/rollback. Query timeout can be overridden by explicitly calling setQueryTimeout",
         Constants.DEFAULT_TIMEOUT
     );
+    private LongConnectionProperty maxMessageSize = new LongConnectionProperty(
+        "maxMessageSize",
+        "The gRPC max message size",
+        // <=0 means use the default
+        0
+    );
 
     // Caching of some hot properties to avoid casting over and over
     private Topodata.TabletType tabletTypeCache;
@@ -439,6 +445,14 @@ public class ConnectionProperties {
 
     public void setTimeout(long timeout) {
         this.timeout.setValue(timeout);
+    }
+
+    public int getMaxMessageSize() {
+        return (int) (long) maxMessageSize.getValueAsLong();
+    }
+
+    public void setMaxMessageSize(int maxMessageSize) {
+        this.maxMessageSize.setValue((long) maxMessageSize);
     }
 
     abstract static class ConnectionProperty {

@@ -48,6 +48,7 @@ import io.vitess.client.grpc.tls.TlsOptions;
 public class GrpcClientFactory implements RpcClientFactory {
 
   private RetryingInterceptorConfig config;
+  private int maxMessageSize = 0;
 
   public GrpcClientFactory() {
     this(RetryingInterceptorConfig.noOpConfig());
@@ -68,7 +69,15 @@ public class GrpcClientFactory implements RpcClientFactory {
   @Override
   public RpcClient create(Context ctx, String target) {
     return new GrpcClient(
-            NettyChannelBuilder.forTarget(target).negotiationType(NegotiationType.PLAINTEXT).intercept(new RetryingInterceptor(config)).build());
+            applyMaxMessageSize(NettyChannelBuilder.forTarget(target).negotiationType(NegotiationType.PLAINTEXT).intercept(new RetryingInterceptor(config))).build());
+  }
+
+  private NettyChannelBuilder applyMaxMessageSize(NettyChannelBuilder nettyChannelBuilder) {
+    if (maxMessageSize > 0) {
+      return nettyChannelBuilder.maxMessageSize(maxMessageSize);
+    } else {
+      return nettyChannelBuilder;
+    }
   }
 
   /**
@@ -122,7 +131,7 @@ public class GrpcClientFactory implements RpcClientFactory {
     }
 
     return new GrpcClient(
-        NettyChannelBuilder.forTarget(target).negotiationType(NegotiationType.TLS).sslContext(sslContext).intercept(new RetryingInterceptor(config)).build());
+        applyMaxMessageSize(NettyChannelBuilder.forTarget(target).negotiationType(NegotiationType.TLS).sslContext(sslContext).intercept(new RetryingInterceptor(config))).build());
   }
 
   /**
@@ -311,6 +320,10 @@ public class GrpcClientFactory implements RpcClientFactory {
       }
     }
     return null;
+  }
+
+  public void setMaxMessageSize(int maxMessageSize) {
+    this.maxMessageSize = maxMessageSize;
   }
 
   /**
