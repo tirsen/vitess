@@ -106,6 +106,13 @@ func (dbc *DBConn) Exec(ctx context.Context, query string, maxrows int, wantfiel
 			return nil, err
 		}
 
+		// Don't retry if context was canceled.
+		select {
+		case <-ctx.Done():
+			return nil, err
+		default:
+		}
+
 		// Connection error. Try to reconnect.
 		if reconnectErr := dbc.reconnect(); reconnectErr != nil {
 			// Reconnect failed.
@@ -171,8 +178,14 @@ func (dbc *DBConn) Stream(ctx context.Context, query string, callback func(*sqlt
 			return nil
 		case !mysql.IsConnErr(err) || resultSent || attempt == 2:
 			// MySQL error that isn't due to a connection issue
-			log.Infof("query: %s failed, start: %v, lastSend: %v, errorTime: %v, idle-diff: %v, rowCount: %d, attempt: %d", query, start, lastSend, time.Now(), time.Since(lastSend), rowCount, attempt)
+			log.Infof("query: %s failed, err: %v, start: %v, lastSend: %v, errorTime: %v, idle-diff: %v, rowCount: %d, attempt: %d", query, err, start, lastSend, time.Now(), time.Since(lastSend), rowCount, attempt)
 			return err
+		}
+		// Don't retry if context was canceled.
+		select {
+		case <-ctx.Done():
+			return err
+		default:
 		}
 		err2 := dbc.reconnect()
 		if err2 != nil {
