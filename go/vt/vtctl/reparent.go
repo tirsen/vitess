@@ -26,22 +26,13 @@ import (
 	"github.com/youtube/vitess/go/vt/wrangler"
 	"golang.org/x/net/context"
 
+	"github.com/youtube/vitess/go/vt/mysqlctl"
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
-)
-
-var (
-	// DisableActiveReparents is a flag to disable active
-	// reparents for safety reasons. It is used in two places:
-	// 1. in this file to skip registering the commands.
-	// 2. in vtctld so it can be exported to the UI (different
-	// package, that's why it's exported). That way we can disable
-	// menu items there, using features.
-	DisableActiveReparents = flag.Bool("disable_active_reparents", false, "if set, do not allow active reparents. Use this to protect a cluster using external reparents.")
 )
 
 func init() {
 	servenv.OnRun(func() {
-		if *DisableActiveReparents {
+		if *mysqlctl.DisableActiveReparents {
 			return
 		}
 

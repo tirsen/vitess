@@ -35,6 +35,7 @@ import (
 	"github.com/youtube/vitess/go/vt/discovery"
 	"github.com/youtube/vitess/go/vt/hook"
 	"github.com/youtube/vitess/go/vt/logutil"
+	"github.com/youtube/vitess/go/vt/mysqlctl"
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
 	workflowpb "github.com/youtube/vitess/go/vt/proto/workflow"
 	"github.com/youtube/vitess/go/vt/topo"
@@ -1277,7 +1278,7 @@ func (shardSwap *shardSchemaSwap) reparentFromMaster(masterTablet *topodatapb.Ta
 	defer shardSwap.markStepDone(shardSwap.reparentUINode, &err)
 
 	shardSwap.addShardLog(fmt.Sprintf("Reparenting away from master %v", masterTablet.Alias))
-	if *vtctl.DisableActiveReparents {
+	if *mysqlctl.DisableActiveReparents {
 		hk := &hook.Hook{
 			Name: "reparent_away",
 		}
