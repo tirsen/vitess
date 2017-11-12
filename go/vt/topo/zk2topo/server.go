@@ -26,6 +26,9 @@ import (
 
 	"github.com/youtube/vitess/go/vt/topo"
 
+	"flag"
+	"strings"
+
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
 )
 
@@ -38,6 +41,10 @@ const (
 	tabletsPath   = "tablets"
 	locksPath     = "locks"
 	electionsPath = "elections"
+)
+
+var (
+	cellOverrides = flag.String("zk_cell_overrides", "", "zk connection string overrides for cells, format: cell1=host:port,cell2=host:port")
 )
 
 // instance is holding a Zookeeper connection, and the root directory
@@ -100,12 +107,30 @@ func (zs *Server) connForCell(ctx context.Context, cell string) (Conn, string, e
 	if err := proto.Unmarshal(data, ci); err != nil {
 		return nil, "", fmt.Errorf("cannot Unmarshal CellInfo for cell %v: %v", cell, err)
 	}
+	serverAddress := cellOverride(cell)
+	if serverAddress == "" {
+		serverAddress = ci.ServerAddress
+	}
 	ins = &instance{
 		root: ci.Root,
-		conn: Connect(ci.ServerAddress),
+		conn: Connect(serverAddress),
 	}
 	zs.instances[cell] = ins
 	return ins.conn, ins.root, nil
+}
+
+func cellOverride(cell string) string {
+	for _, o := range strings.Split(*cellOverrides, ",") {
+		if strings.HasPrefix(cell, o) {
+			parts := strings.Split(o, "=")
+			overrideCell := parts[0]
+			overrideHost := parts[1]
+			if overrideCell == cell {
+				return overrideHost
+			}
+		}
+	}
+	return ""
 }
 
 // Close is part of topo.Impl interface.
