@@ -17,6 +17,7 @@ limitations under the License.
 package zk2topo
 
 import (
+	"flag"
 	"strings"
 
 	"vitess.io/vitess/go/vt/topo"
@@ -26,6 +27,10 @@ const (
 	// Path elements
 	locksPath     = "locks"
 	electionsPath = "elections"
+)
+
+var (
+	cellOverrides = flag.String("zk_cell_overrides", "", "zk connection string overrides for cells, format: cell1=host:port,cell2=host:port")
 )
 
 // Factory is the zookeeper topo.Factory implementation.
@@ -61,6 +66,10 @@ func (f Factory) HasGlobalReadOnlyCell(serverAddr, root string) bool {
 
 // Create is part of the topo.Factory interface.
 func (f Factory) Create(cell, serverAddr, root string) (topo.Conn, error) {
+	serverAddressOverride := cellOverride(cell)
+	if serverAddressOverride != "" {
+		serverAddr = serverAddressOverride
+	}
 	if cell == topo.GlobalCell {
 		// For the global cell, extract the voting servers if we
 		// have observers.
@@ -88,6 +97,20 @@ func NewServer(serverAddr, root string) *Server {
 		root: root,
 		conn: Connect(serverAddr),
 	}
+}
+
+func cellOverride(cell string) string {
+	for _, o := range strings.Split(*cellOverrides, ",") {
+		if strings.HasPrefix(o, cell) {
+			parts := strings.Split(o, "=")
+			overrideCell := parts[0]
+			overrideHost := parts[1]
+			if overrideCell == cell {
+				return overrideHost
+			}
+		}
+	}
+	return ""
 }
 
 // Close is part of topo.Conn interface.
