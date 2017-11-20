@@ -97,7 +97,7 @@ public class GrpcClientFactory implements RpcClientFactory {
     final SslContextBuilder sslContextBuilder = GrpcSslContexts.forClient();
 
     // trustManager should always be set
-    final KeyStore trustStore = loadKeyStore(tlsOptions.getTrustStore(), tlsOptions.getTrustStorePassword());
+    final KeyStore trustStore = loadKeyStore(tlsOptions.getTrustStore(), tlsOptions.getTrustStorePassword(), tlsOptions.getTrustStoreType());
     final X509Certificate[] trustCertCollection = tlsOptions.getTrustAlias() == null
             ? loadCertCollection(trustStore)
             : loadCertCollectionForAlias(trustStore, tlsOptions.getTrustAlias());
@@ -105,7 +105,7 @@ public class GrpcClientFactory implements RpcClientFactory {
 
     // keyManager should only be set if a keyStore is specified (meaning that client authentication is enabled)
     if (tlsOptions.getKeyStore() != null) {
-      final KeyStore keyStore = loadKeyStore(tlsOptions.getKeyStore(), tlsOptions.getKeyStorePassword());
+      final KeyStore keyStore = loadKeyStore(tlsOptions.getKeyStore(), tlsOptions.getKeyStorePassword(), tlsOptions.getKeyStoreType());
       final PrivateKeyWrapper privateKeyWrapper = tlsOptions.getKeyAlias() == null
               ? loadPrivateKeyEntry(keyStore, tlsOptions.getKeyStorePassword(), tlsOptions.getKeyPassword())
               : loadPrivateKeyEntryForAlias(keyStore, tlsOptions.getKeyAlias(), tlsOptions.getKeyStorePassword(), tlsOptions.getKeyPassword());
@@ -136,16 +136,16 @@ public class GrpcClientFactory implements RpcClientFactory {
    *
    * @param keyStoreFile
    * @param keyStorePassword
+   * @param keystoreType
    * @return
    * @throws RuntimeException if the store could not be opened
    */
-  private KeyStore loadKeyStore(final File keyStoreFile, String keyStorePassword) {
-    if (keyStoreFile == null) {
-      return null;
+  private KeyStore loadKeyStore(final File keyStoreFile, String keyStorePassword, String keystoreType) {
+    if (keystoreType == null) {
+      keystoreType = Constants.DEFAULT_KEYSTORE_TYPE;
     }
-
     try {
-      final KeyStore keyStore = KeyStore.getInstance(Constants.KEYSTORE_TYPE);
+      final KeyStore keyStore = KeyStore.getInstance(keystoreType);
       final char[] password = keyStorePassword == null ? null : keyStorePassword.toCharArray();
       try (final FileInputStream fis = new FileInputStream(keyStoreFile)) {
         keyStore.load(fis, password);
