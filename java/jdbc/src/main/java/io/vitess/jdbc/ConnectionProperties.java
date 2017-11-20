@@ -149,6 +149,11 @@ public class ConnectionProperties {
         "The password protecting the keystore file (if a password is set)",
         null,
         null);
+    private StringConnectionProperty keyStoreType = new StringConnectionProperty(
+        Constants.Property.KEYSTORE_TYPE,
+        "The type of store used for the key (default is JKS)",
+        null,
+        null);
     private StringConnectionProperty keyAlias = new StringConnectionProperty(
         Constants.Property.KEY_ALIAS,
         "Alias under which the private key is stored in the keystore file (if not specified, then the "
@@ -169,6 +174,11 @@ public class ConnectionProperties {
     private StringConnectionProperty trustStorePassword = new StringConnectionProperty(
         Constants.Property.TRUSTSTORE_PASSWORD,
         "The password protecting the truststore file (if a password is set)",
+        null,
+        null);
+    private StringConnectionProperty trustStoreType = new StringConnectionProperty(
+        Constants.Property.TRUSTSTORE_TYPE,
+        "The type of store used for the trusted certificates (default is JKS)",
         null,
         null);
     private StringConnectionProperty trustAlias = new StringConnectionProperty(
@@ -419,6 +429,10 @@ public class ConnectionProperties {
         return keyStorePassword.getValueAsString();
     }
 
+    public String getKeyStoreType() {
+        return keyStoreType.getValueAsString();
+    }
+
     public String getKeyAlias() {
         return keyAlias.getValueAsString();
     }
@@ -433,6 +447,10 @@ public class ConnectionProperties {
 
     public String getTrustStorePassword() {
         return trustStorePassword.getValueAsString();
+    }
+
+    public String getTrustStoreType() {
+        return trustStoreType.getValueAsString();
     }
 
     public String getTrustAlias() {
