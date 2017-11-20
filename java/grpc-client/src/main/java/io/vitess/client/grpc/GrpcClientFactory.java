@@ -98,17 +98,14 @@ public class GrpcClientFactory implements RpcClientFactory {
 
     // trustManager should always be set
     final KeyStore trustStore = loadKeyStore(tlsOptions.getTrustStore(), tlsOptions.getTrustStorePassword());
-    if (trustStore == null) {
-      throw new RuntimeException("Could not load trustStore");
-    }
     final X509Certificate[] trustCertCollection = tlsOptions.getTrustAlias() == null
             ? loadCertCollection(trustStore)
             : loadCertCollectionForAlias(trustStore, tlsOptions.getTrustAlias());
     sslContextBuilder.trustManager(trustCertCollection);
 
     // keyManager should only be set if a keyStore is specified (meaning that client authentication is enabled)
-    final KeyStore keyStore = loadKeyStore(tlsOptions.getKeyStore(), tlsOptions.getKeyStorePassword());
-    if (keyStore != null) {
+    if (tlsOptions.getKeyStore() != null) {
+      final KeyStore keyStore = loadKeyStore(tlsOptions.getKeyStore(), tlsOptions.getKeyStorePassword());
       final PrivateKeyWrapper privateKeyWrapper = tlsOptions.getKeyAlias() == null
               ? loadPrivateKeyEntry(keyStore, tlsOptions.getKeyStorePassword(), tlsOptions.getKeyPassword())
               : loadPrivateKeyEntryForAlias(keyStore, tlsOptions.getKeyAlias(), tlsOptions.getKeyStorePassword(), tlsOptions.getKeyPassword());
@@ -137,15 +134,10 @@ public class GrpcClientFactory implements RpcClientFactory {
   /**
    * <p>Opens a JKS keystore file from the filesystem.</p>
    *
-   * <p>Returns <code>null</code> if the file is inaccessible for any reason, or if the password fails to unlock it.</p>
-   *
    * @param keyStoreFile
    * @param keyStorePassword
    * @return
-   * @throws KeyStoreException
-   * @throws IOException
-   * @throws CertificateException
-   * @throws NoSuchAlgorithmException
+   * @throws RuntimeException if the store could not be opened
    */
   private KeyStore loadKeyStore(final File keyStoreFile, String keyStorePassword) {
     if (keyStoreFile == null) {
@@ -160,7 +152,7 @@ public class GrpcClientFactory implements RpcClientFactory {
       }
       return keyStore;
     } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException | IOException e) {
-      return null;
+      throw new RuntimeException("Could not load " + keyStoreFile, e);
     }
   }
 
