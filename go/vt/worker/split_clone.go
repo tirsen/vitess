@@ -431,18 +431,9 @@ func (scw *SplitCloneWorker) run(ctx context.Context) error {
 		return err
 	}
 
-	// Phase 2a: Find destination master tablets.
+	// Phase 2: Find destination master tablets.
 	if err := scw.findDestinationMasters(ctx); err != nil {
 		return fmt.Errorf("findDestinationMasters() failed: %v", err)
-	}
-	if err := checkDone(ctx); err != nil {
-		return err
-	}
-	// Phase 2b: Wait for minimum number of destination tablets (required for the
-	// diff). Note that while we wait for the minimum number, we'll always use
-	// *all* available RDONLY tablets from each destination shard.
-	if err := scw.waitForTablets(ctx, scw.destinationShards, *waitForHealthyTabletsTimeout); err != nil {
-		return fmt.Errorf("waitForDestinationTablets(destinationShards) failed: %v", err)
 	}
 	if err := checkDone(ctx); err != nil {
 		return err
@@ -970,7 +961,7 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 						// longer stopped at the same point as we took it offline initially.
 						allowMultipleRetries = false
 					} else {
-						tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName())
+						tp = newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_RDONLY)
 					}
 					sourceResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, allowMultipleRetries)
 					if err != nil {
@@ -981,16 +972,8 @@ func (scw *SplitCloneWorker) clone(ctx context.Context, state StatusWorkerState)
 					sourceReaders[shardIndex] = sourceResultReader
 				}
 
-				// Wait for enough healthy tablets (they might have become unhealthy
-				// and their replication lag might have increased due to a previous
-				// chunk pipeline.)
-				if err := scw.waitForTablets(ctx, scw.destinationShards, *retryDuration); err != nil {
-					processError("%v: No healthy destination tablets found (gave up after %v): ", errPrefix, time.Since(start), err)
-					return
-				}
-
 				for shardIndex, si := range scw.destinationShards {
-					tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName())
+					tp := newShardTabletProvider(scw.tsc, scw.tabletTracker, si.Keyspace(), si.ShardName(), topodatapb.TabletType_MASTER)
 					destResultReader, err := NewRestartableResultReader(ctx, scw.wr.Logger(), tp, td, chunk, true /* allowMultipleRetries */)
 					if err != nil {
 						processError("%v: NewRestartableResultReader for destination: %v failed: %v", errPrefix, tp.description(), err)
