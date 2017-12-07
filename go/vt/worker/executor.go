@@ -206,8 +206,19 @@ func (e *executor) fixUniquenessConstraint(retryCtx context.Context, master *dis
 	if m != nil {
 		id := m[1]
 		table := m[2]
-		// TODO id as a primary key is totally hard wired. We need to actually read the table definition to figure generalize this.
+		// TODO id as a primary key is totally hard wired. We need to actually read the table definition to generalize this.
 		deleteSQL = fmt.Sprintf("DELETE FROM %s WHERE id = %s", table, id)
+	}
+
+	// Handle errors like this
+	// Duplicate entry '62631262-1' for key 'unq_customer_id_active' (errno 1062) (sqlstate 23000)
+	r = regexp.MustCompile("Duplicate entry '([^-]+)-([^']+)' for key 'unq_customer_id_active'.*INSERT INTO `[^`]+`\\.`([^`]+)`")
+	m = r.FindStringSubmatch(errorMessage)
+	if m != nil {
+		id := m[1]
+		active := m[2]
+		table := m[3]
+		deleteSQL = fmt.Sprintf("DELETE FROM %s WHERE id = %s AND active = %s", table, id, active)
 	}
 
 	if deleteSQL != "" {
