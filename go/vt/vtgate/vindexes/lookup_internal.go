@@ -29,13 +29,14 @@ import (
 
 // lookupInternal implements the functions for the Lookup vindexes.
 type lookupInternal struct {
-	Table         string   `json:"table"`
-	FromColumns   []string `json:"from_columns"`
-	To            string   `json:"to"`
-	sel, ver, del string
+	Table              string   `json:"table"`
+	FromColumns        []string `json:"from_columns"`
+	To                 string   `json:"to"`
+	AutocommitOnInsert bool     `json:"autocommit_on_insert,omitempty"`
+	sel, ver, del      string
 }
 
-func (lkp *lookupInternal) Init(lookupQueryParams map[string]string) {
+func (lkp *lookupInternal) Init(lookupQueryParams map[string]string) error {
 	lkp.Table = lookupQueryParams["table"]
 	lkp.To = lookupQueryParams["to"]
 	var fromColumns []string
@@ -44,12 +45,19 @@ func (lkp *lookupInternal) Init(lookupQueryParams map[string]string) {
 	}
 	lkp.FromColumns = fromColumns
 
+	var err error
+	lkp.AutocommitOnInsert, err = boolFromMap(lookupQueryParams, "autocommit_on_insert")
+	if err != nil {
+		return err
+	}
+
 	// TODO @rafael: update sel and ver to support multi column vindexes. This will be done
 	// as part of face 2 of https://github.com/youtube/vitess/issues/3481
 	// For now multi column behaves as a single column for Map and Verify operations
 	lkp.sel = fmt.Sprintf("select %s from %s where %s = :%s", lkp.To, lkp.Table, lkp.FromColumns[0], lkp.FromColumns[0])
 	lkp.ver = fmt.Sprintf("select %s from %s where %s = :%s and %s = :%s", lkp.FromColumns[0], lkp.Table, lkp.FromColumns[0], lkp.FromColumns[0], lkp.To, lkp.To)
 	lkp.del = lkp.initDelStm()
+	return nil
 }
 
 // Lookup performs a lookup for the ids.
@@ -123,11 +131,17 @@ func (lkp *lookupInternal) Create(vcursor VCursor, rowsColValues [][]sqltypes.Va
 		insBuffer.WriteString(":" + toStr + ")")
 		bindVars[toStr] = sqltypes.ValueBindVariable(toValues[rowIdx])
 	}
-	_, err := vcursor.Execute("VindexCreate", insBuffer.String(), bindVars, true /* isDML */)
+
+	var err error
+	if lkp.AutocommitOnInsert {
+		_, err = vcursor.ExecuteAutocommit("VindexCreate", insBuffer.String(), bindVars, true /* isDML */)
+	} else {
+		_, err = vcursor.Execute("VindexCreate", insBuffer.String(), bindVars, true /* isDML */)
+	}
 	if err != nil {
 		return fmt.Errorf("lookup.Create: %v", err)
 	}
-	return err
+	return nil
 }
 
 // Delete deletes the association between ids and value.
@@ -137,7 +151,7 @@ func (lkp *lookupInternal) Create(vcursor VCursor, rowsColValues [][]sqltypes.Va
 //
 // Given the following information in a vindex table with two columns:
 //
-//      +------------------+-----------+--------+
+//	+------------------+-----------+--------+
 //	| hex(keyspace_id) | a         | b      |
 //	+------------------+-----------+--------+
 //	| 52CB7B1B31B2222E | valuea    | valueb |
@@ -179,4 +193,19 @@ func (lkp *lookupInternal) initDelStm() string {
 	}
 	delBuffer.WriteString(" and " + lkp.To + " = :" + lkp.To)
 	return delBuffer.String()
+}
+
+func boolFromMap(m map[string]string, key string) (bool, error) {
+	val, ok := m[key]
+	if !ok {
+		return false, nil
+	}
+	switch val {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s value must be 'true' or 'false': '%s'", key, val)
+	}
 }

@@ -52,9 +52,11 @@ type LookupHash struct {
 // NewLookupHash creates a LookupHash vindex.
 func NewLookupHash(name string, m map[string]string) (Vindex, error) {
 	lh := &LookupHash{name: name}
-	lh.lkp.Init(m)
+	if err := lh.lkp.Init(m); err != nil {
+		return nil, err
+	}
 	var err error
-	lh.scatterIfAbsent, err = getScatterIfAbsent(m)
+	lh.scatterIfAbsent, err = boolFromMap(m, "scatter_if_absent")
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +179,10 @@ type LookupHashUnique struct {
 // NewLookupHashUnique creates a LookupHashUnique vindex.
 func NewLookupHashUnique(name string, m map[string]string) (Vindex, error) {
 	lhu := &LookupHashUnique{name: name}
-	lhu.lkp.Init(m)
-	scatter, err := getScatterIfAbsent(m)
+	if err := lhu.lkp.Init(m); err != nil {
+		return nil, err
+	}
+	scatter, err := boolFromMap(m, "scatter_if_absent")
 	if err != nil {
 		return nil, err
 	}

@@ -115,9 +115,11 @@ func (ln *LookupNonUnique) MarshalJSON() ([]byte, error) {
 // NewLookup creates a LookupNonUnique vindex.
 func NewLookup(name string, m map[string]string) (Vindex, error) {
 	lookup := &LookupNonUnique{name: name}
-	lookup.lkp.Init(m)
+	if err := lookup.lkp.Init(m); err != nil {
+		return nil, err
+	}
 	var err error
-	lookup.scatterIfAbsent, err = getScatterIfAbsent(m)
+	lookup.scatterIfAbsent, err = boolFromMap(m, "scatter_if_absent")
 	if err != nil {
 		return nil, err
 	}
@@ -130,21 +132,6 @@ func ksidsToValues(ksids [][]byte) []sqltypes.Value {
 		values = append(values, sqltypes.MakeTrusted(sqltypes.VarBinary, ksid))
 	}
 	return values
-}
-
-func getScatterIfAbsent(m map[string]string) (bool, error) {
-	val, ok := m["scatter_if_absent"]
-	if !ok {
-		return false, nil
-	}
-	switch val {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return false, fmt.Errorf("scatter_if_absent value must be 'true' or 'false': '%s'", val)
-	}
 }
 
 //====================================================================
@@ -160,8 +147,10 @@ type LookupUnique struct {
 // NewLookupUnique creates a LookupUnique vindex.
 func NewLookupUnique(name string, m map[string]string) (Vindex, error) {
 	lu := &LookupUnique{name: name}
-	lu.lkp.Init(m)
-	scatter, err := getScatterIfAbsent(m)
+	if err := lu.lkp.Init(m); err != nil {
+		return nil, err
+	}
+	scatter, err := boolFromMap(m, "scatter_if_absent")
 	if err != nil {
 		return nil, err
 	}
