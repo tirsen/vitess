@@ -113,6 +113,15 @@ func (ln *LookupNonUnique) MarshalJSON() ([]byte, error) {
 }
 
 // NewLookup creates a LookupNonUnique vindex.
+// The supplied map has the following required fields:
+//   table: name of the backing table. It can be qualified by the keyspace.
+//   from: list of columns in the table that have the 'from' values of the lookup vindex.
+//   to: The 'to' column name of the table.
+//   autocommit_on_insert: setting this to "true" will cause inserts to autocommit.
+//   disallow_update: this will fail attempts to change vindex values through update statements.
+//   upsert_on_insert: this will change inserts to upserts, which can overwrite an existing mapping. Use with caution.
+//   upsert_on_update: this will change updates to upserts, which can create new entries where there were none. Use with caution.
+//   scatter_if_absent: if an entry is missing, this flag will the query to be sent to all shards.
 func NewLookup(name string, m map[string]string) (Vindex, error) {
 	lookup := &LookupNonUnique{name: name}
 	if err := lookup.lkp.Init(m); err != nil {
@@ -145,6 +154,14 @@ type LookupUnique struct {
 }
 
 // NewLookupUnique creates a LookupUnique vindex.
+// The supplied map has the following required fields:
+//   table: name of the backing table. It can be qualified by the keyspace.
+//   from: list of columns in the table that have the 'from' values of the lookup vindex.
+//   to: The 'to' column name of the table.
+//   autocommit_on_insert: setting this to "true" will cause inserts to autocommit.
+//   disallow_update: this will fail attempts to change vindex values through update statements.
+//   upsert_on_insert: this will change inserts to upserts, which can overwrite an existing mapping. Use with caution.
+//   upsert_on_update: this will change updates to upserts, which can create new entries where there were none. Use with caution.
 func NewLookupUnique(name string, m map[string]string) (Vindex, error) {
 	lu := &LookupUnique{name: name}
 	if err := lu.lkp.Init(m); err != nil {

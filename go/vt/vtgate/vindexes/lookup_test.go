@@ -325,6 +325,47 @@ func TestLookupNonUniqueCreateAutocommit(t *testing.T) {
 	}
 }
 
+func TestLookupNonUniqueCreateUpsertOnInsert(t *testing.T) {
+	lookupNonUnique, err := CreateVindex("lookup", "lookup", map[string]string{
+		"table":            "t",
+		"from":             "from1,from2",
+		"to":               "toc",
+		"upsert_on_insert": "true",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vc := &vcursor{}
+
+	err = lookupNonUnique.(Lookup).Create(
+		vc,
+		[][]sqltypes.Value{{
+			sqltypes.NewInt64(1), sqltypes.NewInt64(2),
+		}, {
+			sqltypes.NewInt64(3), sqltypes.NewInt64(4),
+		}},
+		[][]byte{[]byte("test1"), []byte("test2")},
+		false /* ignoreMode */)
+	if err != nil {
+		t.Error(err)
+	}
+
+	wantqueries := []*querypb.BoundQuery{{
+		Sql: "insert into t(from1, from2, toc) values(:from10, :from20, :toc0), (:from11, :from21, :toc1) on duplicate key update from1=values(from1), from2=values(from2), toc=values(toc)",
+		BindVariables: map[string]*querypb.BindVariable{
+			"from10": sqltypes.Int64BindVariable(1),
+			"from20": sqltypes.Int64BindVariable(2),
+			"toc0":   sqltypes.BytesBindVariable([]byte("test1")),
+			"from11": sqltypes.Int64BindVariable(3),
+			"from21": sqltypes.Int64BindVariable(4),
+			"toc1":   sqltypes.BytesBindVariable([]byte("test2")),
+		},
+	}}
+	if !reflect.DeepEqual(vc.queries, wantqueries) {
+		t.Errorf("lookup.Create queries:\n%v, want\n%v", vc.queries, wantqueries)
+	}
+}
+
 func TestLookupNonUniqueDelete(t *testing.T) {
 	lookupNonUnique := createLookup(t, "lookup", false)
 	vc := &vcursor{}
@@ -359,6 +400,70 @@ func TestLookupNonUniqueDelete(t *testing.T) {
 		t.Errorf("lookupNonUnique(query fail) err: %v, want %s", err, want)
 	}
 	vc.mustFail = false
+}
+
+func TestLookupNonUniqueUpdate(t *testing.T) {
+	lookupNonUnique := createLookup(t, "lookup", false)
+	vc := &vcursor{}
+
+	err := lookupNonUnique.(Lookup).Update(vc, []sqltypes.Value{sqltypes.NewInt64(1)}, []byte("test"), []sqltypes.Value{sqltypes.NewInt64(2)})
+	if err != nil {
+		t.Error(err)
+	}
+
+	wantqueries := []*querypb.BoundQuery{{
+		Sql: "delete from t where fromc = :fromc and toc = :toc",
+		BindVariables: map[string]*querypb.BindVariable{
+			"fromc": sqltypes.Int64BindVariable(1),
+			"toc":   sqltypes.BytesBindVariable([]byte("test")),
+		},
+	}, {
+		Sql: "insert into t(fromc, toc) values(:fromc0, :toc0)",
+		BindVariables: map[string]*querypb.BindVariable{
+			"fromc0": sqltypes.Int64BindVariable(2),
+			"toc0":   sqltypes.BytesBindVariable([]byte("test")),
+		},
+	}}
+	if !reflect.DeepEqual(vc.queries, wantqueries) {
+		t.Errorf("lookup.Update queries:\n%v, want\n%v", vc.queries, wantqueries)
+	}
+}
+
+func TestLookupNonUniqueUpdateUpsert(t *testing.T) {
+	lookupNonUnique, err := CreateVindex("lookup", "lookup", map[string]string{
+		"table":            "t",
+		"from":             "from1,from2",
+		"to":               "toc",
+		"upsert_on_update": "true",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vc := &vcursor{}
+
+	err = lookupNonUnique.(Lookup).Update(
+		vc,
+		[]sqltypes.Value{sqltypes.NewInt64(1), sqltypes.NewInt64(2)},
+		[]byte("test"),
+		[]sqltypes.Value{sqltypes.NewInt64(3), sqltypes.NewInt64(4)},
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	wantqueries := []*querypb.BoundQuery{{
+		Sql: "insert into t(from1, from2, toc) values(:from1, :from2, :toc) on duplicate key update from1=:from1_new, from2=:from2_new",
+		BindVariables: map[string]*querypb.BindVariable{
+			"from1":     sqltypes.Int64BindVariable(1),
+			"from2":     sqltypes.Int64BindVariable(2),
+			"toc":       sqltypes.BytesBindVariable([]byte("test")),
+			"from1_new": sqltypes.Int64BindVariable(3),
+			"from2_new": sqltypes.Int64BindVariable(4),
+		},
+	}}
+	if !reflect.DeepEqual(vc.queries, wantqueries) {
+		t.Errorf("lookup.Update queries:\n%v, want\n%v", vc.queries, wantqueries)
+	}
 }
 
 func createLookup(t *testing.T, name string, scatterIfAbsent bool) Vindex {

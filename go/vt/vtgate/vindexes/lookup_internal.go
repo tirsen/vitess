@@ -18,6 +18,7 @@ package vindexes
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -33,7 +34,11 @@ type lookupInternal struct {
 	FromColumns        []string `json:"from_columns"`
 	To                 string   `json:"to"`
 	AutocommitOnInsert bool     `json:"autocommit_on_insert,omitempty"`
+	DisallowUpdate     bool     `json:"disallow_update,omitempty"`
+	UpsertOnInsert     bool     `json:"upsert_on_insert,omitempty"`
+	UpsertOnUpdate     bool     `json:"upsert_on_update,omitempty"`
 	sel, ver, del      string
+	upsertUpdate       string
 }
 
 func (lkp *lookupInternal) Init(lookupQueryParams map[string]string) error {
@@ -50,13 +55,26 @@ func (lkp *lookupInternal) Init(lookupQueryParams map[string]string) error {
 	if err != nil {
 		return err
 	}
+	lkp.DisallowUpdate, err = boolFromMap(lookupQueryParams, "disallow_update")
+	if err != nil {
+		return err
+	}
+	lkp.UpsertOnInsert, err = boolFromMap(lookupQueryParams, "upsert_on_insert")
+	if err != nil {
+		return err
+	}
+	lkp.UpsertOnUpdate, err = boolFromMap(lookupQueryParams, "upsert_on_update")
+	if err != nil {
+		return err
+	}
 
 	// TODO @rafael: update sel and ver to support multi column vindexes. This will be done
 	// as part of face 2 of https://github.com/youtube/vitess/issues/3481
 	// For now multi column behaves as a single column for Map and Verify operations
 	lkp.sel = fmt.Sprintf("select %s from %s where %s = :%s", lkp.To, lkp.Table, lkp.FromColumns[0], lkp.FromColumns[0])
 	lkp.ver = fmt.Sprintf("select %s from %s where %s = :%s and %s = :%s", lkp.FromColumns[0], lkp.Table, lkp.FromColumns[0], lkp.FromColumns[0], lkp.To, lkp.To)
-	lkp.del = lkp.initDelStm()
+	lkp.del = lkp.initDelStmt()
+	lkp.upsertUpdate = lkp.initUpsertUpdateStmt()
 	return nil
 }
 
@@ -99,44 +117,51 @@ func (lkp *lookupInternal) Verify(vcursor VCursor, ids, values []sqltypes.Value)
 // toValues contains the keyspace_id of each row being inserted.
 // Given a vindex with two columns and the following insert:
 //
-// INSERT INTO table_a (colum_a, column_b, column_c) VALUES (value_a1, value_b1, value_c1), (value_a2, value_b2, value_c2);
+// INSERT INTO table_a (colum_a, column_b, column_c) VALUES (value_a0, value_b0, value_c0), (value_a1, value_b1, value_c1);
 // If we assume that the primary vindex is on column_c. The call to create will look like this:
-// Create(vcursor, [[value_a1, value_b1,], [value_a2, value_b2]], [binary(value_c1), binary(value_c2)])
+// Create(vcursor, [[value_a0, value_b0,], [value_a1, value_b1]], [binary(value_c0), binary(value_c1)])
 // Notice that toValues contains the computed binary value of the keyspace_id.
 func (lkp *lookupInternal) Create(vcursor VCursor, rowsColValues [][]sqltypes.Value, toValues []sqltypes.Value, ignoreMode bool) error {
-	var insBuffer bytes.Buffer
+	buf := new(bytes.Buffer)
 	if ignoreMode {
-		fmt.Fprintf(&insBuffer, "insert ignore into %s(", lkp.Table)
+		fmt.Fprintf(buf, "insert ignore into %s(", lkp.Table)
 	} else {
-		fmt.Fprintf(&insBuffer, "insert into %s(", lkp.Table)
+		fmt.Fprintf(buf, "insert into %s(", lkp.Table)
 	}
 	for _, col := range lkp.FromColumns {
-		fmt.Fprintf(&insBuffer, "%s, ", col)
-
+		fmt.Fprintf(buf, "%s, ", col)
 	}
+	fmt.Fprintf(buf, "%s) values(", lkp.To)
 
-	fmt.Fprintf(&insBuffer, "%s) values(", lkp.To)
 	bindVars := make(map[string]*querypb.BindVariable, 2*len(rowsColValues))
 	for rowIdx := range toValues {
 		colIds := rowsColValues[rowIdx]
 		if rowIdx != 0 {
-			insBuffer.WriteString(", (")
+			buf.WriteString(", (")
 		}
 		for colIdx, colID := range colIds {
 			fromStr := lkp.FromColumns[colIdx] + strconv.Itoa(rowIdx)
 			bindVars[fromStr] = sqltypes.ValueBindVariable(colID)
-			insBuffer.WriteString(":" + fromStr + ", ")
+			buf.WriteString(":" + fromStr + ", ")
 		}
 		toStr := lkp.To + strconv.Itoa(rowIdx)
-		insBuffer.WriteString(":" + toStr + ")")
+		buf.WriteString(":" + toStr + ")")
 		bindVars[toStr] = sqltypes.ValueBindVariable(toValues[rowIdx])
+	}
+
+	if lkp.UpsertOnInsert {
+		fmt.Fprintf(buf, " on duplicate key update ")
+		for _, col := range lkp.FromColumns {
+			fmt.Fprintf(buf, "%s=values(%s), ", col, col)
+		}
+		fmt.Fprintf(buf, "%s=values(%s)", lkp.To, lkp.To)
 	}
 
 	var err error
 	if lkp.AutocommitOnInsert {
-		_, err = vcursor.ExecuteAutocommit("VindexCreate", insBuffer.String(), bindVars, true /* isDML */)
+		_, err = vcursor.ExecuteAutocommit("VindexCreate", buf.String(), bindVars, true /* isDML */)
 	} else {
-		_, err = vcursor.Execute("VindexCreate", insBuffer.String(), bindVars, true /* isDML */)
+		_, err = vcursor.Execute("VindexCreate", buf.String(), bindVars, true /* isDML */)
 	}
 	if err != nil {
 		return fmt.Errorf("lookup.Create: %v", err)
@@ -176,13 +201,29 @@ func (lkp *lookupInternal) Delete(vcursor VCursor, rowsColValues [][]sqltypes.Va
 
 // Update implements the update functionality.
 func (lkp *lookupInternal) Update(vcursor VCursor, oldValues []sqltypes.Value, ksid sqltypes.Value, newValues []sqltypes.Value) error {
+	if lkp.DisallowUpdate {
+		return errors.New("update is disallowed")
+	}
+	if lkp.UpsertOnUpdate {
+		bindVars := make(map[string]*querypb.BindVariable)
+		for i, col := range lkp.FromColumns {
+			bindVars[col] = sqltypes.ValueBindVariable(oldValues[i])
+			bindVars[col+"_new"] = sqltypes.ValueBindVariable(newValues[i])
+		}
+		bindVars[lkp.To] = sqltypes.ValueBindVariable(ksid)
+		_, err := vcursor.Execute("VindexUpdate", lkp.upsertUpdate, bindVars, true /* isDML */)
+		if err != nil {
+			return fmt.Errorf("lookup.Upsert: %v", err)
+		}
+		return nil
+	}
 	if err := lkp.Delete(vcursor, [][]sqltypes.Value{oldValues}, ksid); err != nil {
 		return err
 	}
 	return lkp.Create(vcursor, [][]sqltypes.Value{newValues}, []sqltypes.Value{ksid}, false /* ignoreMode */)
 }
 
-func (lkp *lookupInternal) initDelStm() string {
+func (lkp *lookupInternal) initDelStmt() string {
 	var delBuffer bytes.Buffer
 	fmt.Fprintf(&delBuffer, "delete from %s where ", lkp.Table)
 	for colIdx, column := range lkp.FromColumns {
@@ -193,6 +234,26 @@ func (lkp *lookupInternal) initDelStm() string {
 	}
 	delBuffer.WriteString(" and " + lkp.To + " = :" + lkp.To)
 	return delBuffer.String()
+}
+
+func (lkp *lookupInternal) initUpsertUpdateStmt() string {
+	buf := new(bytes.Buffer)
+	fmt.Fprintf(buf, "insert into %s(", lkp.Table)
+	for _, col := range lkp.FromColumns {
+		fmt.Fprintf(buf, "%s, ", col)
+	}
+	fmt.Fprintf(buf, "%s) values(", lkp.To)
+	for _, col := range lkp.FromColumns {
+		fmt.Fprintf(buf, ":%s, ", col)
+	}
+	fmt.Fprintf(buf, ":%s) on duplicate key update ", lkp.To)
+	for i, col := range lkp.FromColumns {
+		if i != 0 {
+			buf.WriteString(", ")
+		}
+		fmt.Fprintf(buf, "%s=:%s_new", col, col)
+	}
+	return buf.String()
 }
 
 func boolFromMap(m map[string]string, key string) (bool, error) {
