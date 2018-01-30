@@ -185,6 +185,13 @@ func (lkp *lookupInternal) Create(vcursor VCursor, rowsColValues [][]sqltypes.Va
 // A call to Delete would look like this:
 // Delete(vcursor, [[valuea, valueb]], 52CB7B1B31B2222E)
 func (lkp *lookupInternal) Delete(vcursor VCursor, rowsColValues [][]sqltypes.Value, value sqltypes.Value) error {
+	if lkp.AutocommitOnInsert {
+		// For transactional integrity the delete is a no op:
+		// If the surrounding transaction is rolled back an auto-committed delete would have corrupted the index.
+		// A stray row on the other hand is safe because even if the index row is still around the shard targeted query
+		// won't return something.
+		return nil
+	}
 	for _, column := range rowsColValues {
 		bindVars := make(map[string]*querypb.BindVariable, len(rowsColValues))
 		for colIdx, columnValue := range column {
