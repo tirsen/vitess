@@ -85,7 +85,13 @@ func (lkp *lookupInternal) Lookup(vcursor VCursor, ids []sqltypes.Value) ([]*sql
 		bindVars := map[string]*querypb.BindVariable{
 			lkp.FromColumns[0]: sqltypes.ValueBindVariable(id),
 		}
-		result, err := vcursor.Execute("VindexLookup", lkp.sel, bindVars, false /* isDML */)
+		var result *sqltypes.Result
+		var err error
+		if lkp.AutocommitOnInsert {
+			result, err = vcursor.ExecuteAutocommit("VindexLookup", lkp.sel, bindVars, false /* isDML */)
+		} else {
+			result, err = vcursor.Execute("VindexLookup", lkp.sel, bindVars, false /* isDML */)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("lookup.Map: %v", err)
 		}
