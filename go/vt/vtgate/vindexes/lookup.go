@@ -60,7 +60,9 @@ func (ln *LookupNonUnique) Cost() int {
 func (ln *LookupNonUnique) Map(vcursor VCursor, ids []sqltypes.Value) ([]Ksids, error) {
 	out := make([]Ksids, 0, len(ids))
 	if ln.ignore {
-		out = append(out, Ksids{Range: &topodata.KeyRange{}})
+		for range ids {
+			out = append(out, Ksids{Range: &topodata.KeyRange{}})
+		}
 		return out, nil
 	}
 	results, err := ln.lkp.Lookup(vcursor, ids)

@@ -88,7 +88,9 @@ func (lh *LookupHash) Cost() int {
 func (lh *LookupHash) Map(vcursor VCursor, ids []sqltypes.Value) ([]Ksids, error) {
 	out := make([]Ksids, 0, len(ids))
 	if lh.ignore {
-		out = append(out, Ksids{Range: &topodata.KeyRange{}})
+		for range ids {
+			out = append(out, Ksids{Range: &topodata.KeyRange{}})
+		}
 		return out, nil
 	}
 	results, err := lh.lkp.Lookup(vcursor, ids)
