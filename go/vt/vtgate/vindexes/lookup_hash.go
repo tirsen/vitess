@@ -46,6 +46,7 @@ func init() {
 type LookupHash struct {
 	name            string
 	scatterIfAbsent bool
+	ignore          bool
 	lkp             lookupInternal
 }
 
@@ -66,6 +67,7 @@ func NewLookupHash(name string, m map[string]string) (Vindex, error) {
 	}
 	var err error
 	lh.scatterIfAbsent, err = boolFromMap(m, "scatter_if_absent")
+	lh.ignore, err = boolFromMap(m, "ignore")
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +87,10 @@ func (lh *LookupHash) Cost() int {
 // Map returns the corresponding KeyspaceId values for the given ids.
 func (lh *LookupHash) Map(vcursor VCursor, ids []sqltypes.Value) ([]Ksids, error) {
 	out := make([]Ksids, 0, len(ids))
+	if lh.ignore {
+		out = append(out, Ksids{Range: &topodata.KeyRange{}})
+		return out, nil
+	}
 	results, err := lh.lkp.Lookup(vcursor, ids)
 	if err != nil {
 		return nil, err
@@ -115,7 +121,7 @@ func (lh *LookupHash) Map(vcursor VCursor, ids []sqltypes.Value) ([]Ksids, error
 
 // Verify returns true if ids maps to ksids.
 func (lh *LookupHash) Verify(vcursor VCursor, ids []sqltypes.Value, ksids [][]byte) ([]bool, error) {
-	if lh.scatterIfAbsent {
+	if lh.scatterIfAbsent || lh.ignore {
 		out := make([]bool, len(ids))
 		for i := range ids {
 			out[i] = true
@@ -205,6 +211,13 @@ func NewLookupHashUnique(name string, m map[string]string) (Vindex, error) {
 	}
 	if scatter {
 		return nil, errors.New("scatter_if_absent cannot be true for a unique lookup vindex")
+	}
+	ignore, err := boolFromMap(m, "ignore")
+	if err != nil {
+		return nil, err
+	}
+	if ignore {
+		return nil, errors.New("ignore cannot be true for a unique lookup vindex")
 	}
 	return lhu, nil
 }
