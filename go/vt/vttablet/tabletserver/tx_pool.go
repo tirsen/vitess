@@ -57,6 +57,7 @@ const txLogInterval = time.Duration(1 * time.Minute)
 var (
 	txOnce  sync.Once
 	txStats = stats.NewTimings("Transactions", "Transaction stats", "operation")
+	dupDML  = stats.NewCountersWithSingleLabel("DupDML", "Duplicate DML", "dup")
 
 	txIsolations = map[querypb.ExecuteOptions_TransactionIsolation]string{
 		querypb.ExecuteOptions_REPEATABLE_READ:  "set transaction isolation level REPEATABLE READ",
@@ -424,6 +425,10 @@ func (txc *TxConnection) Recycle() {
 
 // RecordQuery records the query against this transaction.
 func (txc *TxConnection) RecordQuery(query string) {
+	if len(txc.Queries) >= 1 && query == txc.Queries[len(txc.Queries)-1] {
+		log.Infof("Query: %s was duplicated", query)
+		dupDML.Add("dup", 1)
+	}
 	txc.Queries = append(txc.Queries, query)
 }
 
