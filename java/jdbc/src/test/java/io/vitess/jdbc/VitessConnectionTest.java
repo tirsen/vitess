@@ -18,18 +18,28 @@ package io.vitess.jdbc;
 
 import com.google.common.util.concurrent.Futures;
 import io.vitess.client.Context;
+import io.vitess.client.RpcClient;
 import io.vitess.client.SQLFuture;
+import io.vitess.client.VTGateConn;
 import io.vitess.client.VTGateTx;
+import io.vitess.jdbc.VitessVTGateManager.VTGateConnections;
 import io.vitess.proto.Query;
 import io.vitess.proto.Topodata;
+import io.vitess.proto.Topodata.ShardReference;
+import io.vitess.proto.Topodata.SrvKeyspace;
+import io.vitess.proto.Topodata.SrvKeyspace.KeyspacePartition;
+import io.vitess.proto.Vtgate.GetSrvKeyspaceRequest;
+import io.vitess.proto.Vtgate.GetSrvKeyspaceResponse;
 import io.vitess.util.Constants;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Properties;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Matchers;
+import org.mockito.Mockito;
 import org.powermock.api.mockito.PowerMockito;
 
 /**
@@ -216,5 +226,44 @@ public class VitessConnectionTest extends BaseTest {
         Assert.assertEquals(false, conn.isIncludeAllFields());
         Assert.assertEquals(Topodata.TabletType.REPLICA, conn.getTabletType());
         Assert.assertEquals(true, conn.getBlobsAreStrings());
+    }
+
+    @Test public void getShards() throws SQLException {
+        VitessConnection vitessConnection = getVitessConnection();
+        vitessConnection.setTabletType(Topodata.TabletType.REPLICA);
+        VTGateConnections vtGateConnections = PowerMockito.mock(VTGateConnections.class);
+        vitessConnection.connect(vtGateConnections);
+        RpcClient rpcClient = PowerMockito.mock(RpcClient.class);
+        PowerMockito.when(vtGateConnections.getVtGateConnInstance()).thenReturn(new VTGateConn(rpcClient));
+
+        String keyspace = "myKeyspace";
+        GetSrvKeyspaceRequest request = GetSrvKeyspaceRequest.newBuilder()
+            .setKeyspace(keyspace)
+            .build();
+        GetSrvKeyspaceResponse response = GetSrvKeyspaceResponse.newBuilder()
+            .setSrvKeyspace(SrvKeyspace.newBuilder()
+                .addPartitions(newKeyspaceParition(Topodata.TabletType.REPLICA, "-80", "80-"))
+                .addPartitions(newKeyspaceParition(Topodata.TabletType.MASTER, "-")))
+            .build();
+        PowerMockito.when(rpcClient.getSrvKeyspace(Mockito.isA(Context.class), Mockito.eq(request)))
+            .thenReturn(Futures.immediateFuture(response));
+        List<Shard> shards = vitessConnection.getShards(keyspace);
+        Assert.assertEquals(2, shards.size());
+        assertShardsEqual(new Shard(keyspace, "-80"), shards.get(0));
+        assertShardsEqual(new Shard(keyspace, "80-"), shards.get(1));
+    }
+
+    private KeyspacePartition newKeyspaceParition(Topodata.TabletType tabletType, String... names) {
+        KeyspacePartition.Builder partition = KeyspacePartition.newBuilder()
+            .setServedTypeValue(tabletType.getNumber());
+        for (String name : names) {
+            partition.addShardReferences(ShardReference.newBuilder().setName(name));
+        }
+        return partition.build();
+    }
+
+    private void assertShardsEqual(Shard expected, Shard actual) {
+        Assert.assertEquals(expected.keyspace, actual.keyspace);
+        Assert.assertEquals(expected.shard, actual.shard);
     }
 }
