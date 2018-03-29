@@ -16,6 +16,7 @@
 
 package io.vitess.jdbc;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.vitess.client.Context;
 import io.vitess.client.VTGateConn;
 import io.vitess.client.VTGateTx;
@@ -103,6 +104,11 @@ public class VitessConnection extends ConnectionProperties implements Connection
 
     public void connect() {
         this.vTGateConnections = new VitessVTGateManager.VTGateConnections(this);
+    }
+
+    @VisibleForTesting
+    public void connect(VitessVTGateManager.VTGateConnections connections) {
+        this.vTGateConnections = connections;
     }
 
     /**
@@ -942,7 +948,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
 
         // We ignore served from at this stage. It is handled in withTargetShard
         for (Topodata.SrvKeyspace.KeyspacePartition partition : srvKeyspace.getPartitionsList()) {
-            if (partition.getServedType().equals(Topodata.TabletType.MASTER)) {
+            if (partition.getServedType().equals(getTabletType())) {
                 ArrayList<Shard> result = new ArrayList<>(partition.getShardReferencesCount());
                 for (Topodata.ShardReference shardReference : partition.getShardReferencesList()) {
                     result.add(new Shard(keyspace, shardReference.getName()));
@@ -950,7 +956,7 @@ public class VitessConnection extends ConnectionProperties implements Connection
                 return result;
             }
         }
-        throw new SQLException("No MASTER replica for keyspace: " + keyspace);
+        throw new SQLException(String.format("No %s tablet type for keyspace: " + keyspace));
     }
 
     public boolean isTargettingShard() {
