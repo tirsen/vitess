@@ -168,7 +168,11 @@ func (e *executor) fetchWithRetries(ctx context.Context, action func(ctx context
 
 			if strings.Contains(fmt.Sprintf("%s", finalErr), "Duplicate entry") {
 				// Try to resolve this on the fly so that we can make progress
-				e.fixUniquenessConstraint(retryCtx, master, isRetry, finalErr)
+				err = e.fixUniquenessConstraint(retryCtx, master, isRetry, finalErr)
+				if err != nil {
+					// Failed to resolve the constraint
+					return err
+				}
 			} else {
 				if finalErr != nil {
 					// Non-retryable error.
