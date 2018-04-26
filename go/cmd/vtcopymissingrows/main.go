@@ -118,7 +118,7 @@ func main() {
 
 	tabletManager := tmclient.NewTabletManagerClient()
 
-	selectPkSql := fmt.Sprintf("SELECT id FROM %v", tableName)
+	selectMaxPkSql := fmt.Sprintf("SELECT MAX(id) FROM %v", tableName)
 	selectSql := fmt.Sprintf("SELECT * FROM %v", tableName)
 
 	fieldResult, err := sourceQs.Execute(ctx, sourceTarget, selectSql+" WHERE 1=0", make(map[string]*query.BindVariable), 0, nil)
@@ -126,13 +126,20 @@ func main() {
 		log.Fatalln(err)
 	}
 
+	maxIdResult, err := sourceQs.Execute(ctx, sourceTarget, selectMaxPkSql, make(map[string]*query.BindVariable), 0, nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	maxIdValue := maxIdResult.Rows[0][0]
+	maxId := encodeSQL(maxIdValue)
+
 	table := vschema.Tables[tableName]
 	primaryVindex := table.ColumnVindexes[0]
 	if len(primaryVindex.Columns) > 1 {
 		log.Fatalln("can only handle vindex on single column")
 	}
 
-	if primaryVindex.Vindex.IsUnique() {
+	if !primaryVindex.Vindex.IsUnique() {
 		log.Fatalln("primary vindex have to be unqiue")
 	}
 
@@ -147,7 +154,9 @@ func main() {
 		log.Fatalf("no column named 'id' in: %#v", fieldResult.Fields)
 	}
 
-	selectPkAndPrimaryVindexSql := fmt.Sprintf("SELECT id, %v FROM %v", primaryVindex.Columns[0].Lowered(), tableName)
+	selectPkAndPrimaryVindexSql := fmt.Sprintf("SELECT id, %v FROM %v WHERE id <= %v", primaryVindex.Columns[0].Lowered(), tableName, maxId)
+
+	selectPkSql := fmt.Sprintf("SELECT id FROM %v WHERE id <= %v", tableName, maxId)
 
 	// This disables rowlimit and query timeout so we can process the entire table
 	executeOptions := query.ExecuteOptions{Workload: query.ExecuteOptions_OLAP}
@@ -174,11 +183,16 @@ func main() {
 	}
 
 	_, _, allShards, err := getKeyspaceShards(ctx, ts, sourceTarget.Keyspace, sourceTarget.TabletType)
+	allShards = []*topodata.ShardReference{
+		{Name: destShard.ShardName(), KeyRange: destShard.KeyRange},
+	}
 
 	var idsToCopy []sqltypes.Value
 	var sourceRowCount = 0
 	log.Infoln(selectPkAndPrimaryVindexSql)
-	err = sourceReplicaQs.StreamExecute(ctx, &sourceReplicaTarget, selectPkAndPrimaryVindexSql, make(map[string]*query.BindVariable), &executeOptions, func(result *sqltypes.Result) error {
+	streamCtx, streamCancel := context.WithTimeout(context.Background(), *timeout)
+	defer streamCancel()
+	err = sourceReplicaQs.StreamExecute(streamCtx, &sourceReplicaTarget, selectPkAndPrimaryVindexSql, make(map[string]*query.BindVariable), &executeOptions, func(result *sqltypes.Result) error {
 		if len(result.Rows) == 0 {
 			return nil
 		}
@@ -193,10 +207,6 @@ func main() {
 				return err
 			}
 			err = destination[0].Resolve(allShards, func(shard string) error {
-				if destShard.ShardName() != shard {
-					// Not the correct shard
-					return nil
-				}
 				idVal := row[0]
 				_, ok := rowsInDest[idVal.String()]
 				if ok {
@@ -209,13 +219,22 @@ func main() {
 				return nil
 			})
 			if err != nil {
+				if strings.Contains(err.Error(), "didn't match any shards") {
+					continue
+				}
 				return err
+			}
+
+			if len(idsToCopy) > 5000 {
+				log.Infof("got 5000. will insert these and you have to run again")
+				streamCancel()
+				break
 			}
 		}
 
 		return nil
 	})
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "context canceled") {
 		log.Fatal(err)
 	}
 
@@ -239,9 +258,7 @@ func main() {
 			// Insert the row in the destination
 			var values = make([]string, len(fieldResult.Fields))
 			for i, value := range row {
-				b := bytes2.Buffer{}
-				value.EncodeSQL(&b)
-				values[i] = b.String()
+				values[i] = encodeSQL(value)
 			}
 			insertSql := "INSERT INTO " + sqlescape.EscapeID(tableName) +
 				" (" + strings.Join(escapeAll(fieldResult.Fields), ", ") + ") VALUES (" +
@@ -275,6 +292,13 @@ func main() {
 	} else {
 		log.Infoln("nothing to copy. done")
 	}
+}
+
+func encodeSQL(value sqltypes.Value) string {
+	b := bytes2.Buffer{}
+	value.EncodeSQL(&b)
+	maxId := b.String()
+	return maxId
 }
 
 func connect(ctx context.Context, ts *topo.Server, target *query.Target) (queryservice.QueryService, *topodata.Tablet, error) {
