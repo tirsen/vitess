@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/bytes2"
 	"vitess.io/vitess/go/sqltypes"
 	"vitess.io/vitess/go/vt/discovery"
 	"vitess.io/vitess/go/vt/throttler"
@@ -225,6 +226,42 @@ func (e *executor) fixUniquenessConstraint(retryCtx context.Context, master *dis
 		deleteSQL = fmt.Sprintf("DELETE FROM %s WHERE id = %s AND active = %s", table, id, active)
 	}
 
+	// Try handling the rest of the unique index inserts
+	r = regexp.MustCompile("Duplicate entry '([^']+)' for key '([^']+)'.*INSERT INTO `([^`]+)`\\.`([^`]+)`")
+	m = r.FindStringSubmatch(errorMessage)
+	if m != nil {
+		indexEntry := m[1]
+		indexName := m[2]
+		schema := m[3]
+		table := m[4]
+		indexValues := strings.Split(indexEntry, "-")
+
+		sql, err := e.generateDeleteForUniqueIndexConstraint(retryCtx, master, schema, table, indexName, indexValues)
+		if err != nil {
+			e.wr.Logger().Errorf("%v", err)
+		} else {
+			deleteSQL = sql
+		}
+	}
+
+	// Try handling unique index updates
+	r = regexp.MustCompile("Duplicate entry '([^']+)' for key '([^']+)'.*UPDATE `([^`]+)`\\.`([^`]+)`")
+	m = r.FindStringSubmatch(errorMessage)
+	if m != nil {
+		indexEntry := m[1]
+		indexName := m[2]
+		schema := m[3]
+		table := m[4]
+		indexValues := strings.Split(indexEntry, "-")
+
+		sql, err := e.generateDeleteForUniqueIndexConstraint(retryCtx, master, schema, table, indexName, indexValues)
+		if err != nil {
+			e.wr.Logger().Errorf("%v", err)
+		} else {
+			deleteSQL = sql
+		}
+	}
+
 	if deleteSQL != "" {
 		e.wr.Logger().Infof("Running this to fix uniqueness constraint violation: %s", deleteSQL)
 		tryCtx, cancel := context.WithTimeout(retryCtx, 2*time.Minute)
@@ -233,8 +270,64 @@ func (e *executor) fixUniquenessConstraint(retryCtx context.Context, master *dis
 		return err
 	}
 
-	e.wr.Logger().Warningf("Can't resolve uniqueness constraint violation: %s", errorMessage)
+	e.wr.Logger().Warningf("Can't resolve uniqueness constraint violation: %v", errorMessage)
 	return errorToFix
+}
+
+func (e *executor) generateDeleteForUniqueIndexConstraint(retryCtx context.Context, master *discovery.TabletStats, schema, table, indexName string, indexValues []string) (string, error) {
+	// Query the index information
+	e.wr.Logger().Infof("Fixing unique index constraint. schema: %v, table: %v, index: %v", schema, table, indexName)
+	indexSQL := fmt.Sprintf("SELECT COLUMN_NAME "+
+		"FROM INFORMATION_SCHEMA.STATISTICS "+
+		"WHERE TABLE_SCHEMA = '%v' AND TABLE_NAME = '%v' AND INDEX_NAME = '%v' AND NON_UNIQUE = 0 "+
+		"ORDER BY SEQ_IN_INDEX ASC",
+		schema, table, indexName)
+	e.wr.Logger().Infof("Attempting to collect index information: %s", indexSQL)
+	tryCtx, cancel := context.WithTimeout(retryCtx, 1*time.Second)
+	ic, err := e.wr.TabletManagerClient().ExecuteFetchAsApp(tryCtx, master.Tablet, true, []byte(indexSQL), 10000)
+	cancel()
+	if err != nil {
+		return "", fmt.Errorf("Unable to pull index info using query %v, error: %v", indexSQL, err)
+	} else if len(indexValues) != len(ic.Rows) {
+		return "", fmt.Errorf("Index columns don't match, index cols %v, constraint violation %v", sqltypes.Proto3ToResult(ic), indexValues)
+	}
+	indexDef := sqltypes.Proto3ToResult(ic)
+	var indexCols []string
+	for _, col := range indexDef.Rows {
+		indexCols = append(indexCols, col[0].ToString())
+	}
+
+	// Collect index column field information
+	fieldSQL := fmt.Sprintf("SELECT %s FROM %s WHERE 1 != 1", strings.Join(indexCols, ", "), table)
+	e.wr.Logger().Infof("Attempting to collect index column information: %s", fieldSQL)
+	tryCtx, cancel = context.WithTimeout(retryCtx, 1*time.Second)
+	ct, err := e.wr.TabletManagerClient().ExecuteFetchAsApp(tryCtx, master.Tablet, true, []byte(fieldSQL), 1)
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	indexColTypes := make(map[string]querypb.Type, len(ct.Fields))
+	// TODO(sougou): Store the full field info in the schema.
+	for _, field := range ct.Fields {
+		indexColTypes[field.Name] = field.Type
+	}
+
+	// Generate the where clause
+	var deleteWhere []string
+	for i, columnName := range indexCols {
+		val, err := sqltypes.NewValue(indexColTypes[columnName], []byte(indexValues[i]))
+		if err != nil {
+			return "", fmt.Errorf("Index column value parsing error, index %v, column %v, value %v,", indexName, columnName, indexValues[i])
+		}
+
+		b := bytes2.Buffer{}
+		b.WriteString(columnName)
+		b.WriteString(" = ")
+		val.EncodeSQL(&b)
+		deleteWhere = append(deleteWhere, b.String())
+	}
+
+	return fmt.Sprintf("DELETE FROM %s WHERE %s", table, strings.Join(deleteWhere, " AND ")), nil
 }
 
 // checkError returns true if the error can be ignored and the command
