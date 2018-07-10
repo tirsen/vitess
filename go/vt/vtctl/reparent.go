@@ -33,7 +33,7 @@ func init() {
 	addCommand("Tablets", command{
 		"ReparentTablet",
 		commandReparentTablet,
-		"<tablet alias>",
+		"[-force-reparent] <tablet alias>",
 		"Reparent a tablet to the current master in the shard. This only works if the current slave position matches the last known reparent action."})
 
 	addCommand("Shards", command{
@@ -54,13 +54,15 @@ func init() {
 }
 
 func commandReparentTablet(ctx context.Context, wr *wrangler.Wrangler, subFlags *flag.FlagSet, args []string) error {
-	if *mysqlctl.DisableActiveReparents {
-		return fmt.Errorf("active reparent commands disabled (unset the -disable_active_reparents flag to enable)")
-	}
-
+	forceReparent := subFlags.Bool("force_reparent", false, "will force the reparent this once even if active reparents are disabled")
 	if err := subFlags.Parse(args); err != nil {
 		return err
 	}
+
+	if *mysqlctl.DisableActiveReparents && !*forceReparent {
+		return fmt.Errorf("active reparent commands disabled (unset the -disable_active_reparents flag to enable)")
+	}
+
 	if subFlags.NArg() != 1 {
 		return fmt.Errorf("action ReparentTablet requires <tablet alias>")
 	}
