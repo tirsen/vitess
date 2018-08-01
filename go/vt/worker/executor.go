@@ -298,7 +298,7 @@ func (e *executor) generateDeleteForUniqueIndexConstraint(retryCtx context.Conte
 	}
 
 	// Collect index column field information
-	fieldSQL := fmt.Sprintf("SELECT %s FROM %s WHERE 1 != 1", strings.Join(indexCols, ", "), table)
+	fieldSQL := fmt.Sprintf("SELECT %s FROM %s.%s WHERE 1 != 1", strings.Join(indexCols, ", "), schema, table)
 	e.wr.Logger().Infof("Attempting to collect index column information: %s", fieldSQL)
 	tryCtx, cancel = context.WithTimeout(retryCtx, 1*time.Second)
 	ct, err := e.wr.TabletManagerClient().ExecuteFetchAsApp(tryCtx, master.Tablet, true, []byte(fieldSQL), 1)
@@ -327,7 +327,7 @@ func (e *executor) generateDeleteForUniqueIndexConstraint(retryCtx context.Conte
 		deleteWhere = append(deleteWhere, b.String())
 	}
 
-	return fmt.Sprintf("DELETE FROM %s WHERE %s", table, strings.Join(deleteWhere, " AND ")), nil
+	return fmt.Sprintf("DELETE FROM %s.%s WHERE %s", schema, table, strings.Join(deleteWhere, " AND ")), nil
 }
 
 // checkError returns true if the error can be ignored and the command
