@@ -260,9 +260,9 @@ func main() {
 			for i, value := range row {
 				values[i] = encodeSQL(value)
 			}
-			insertSql := "INSERT INTO " + sqlescape.EscapeID(tableName) +
-				" (" + strings.Join(escapeAll(fieldResult.Fields), ", ") + ") VALUES (" +
-				strings.Join(values, ",") + ")"
+			insertSql := "INSERT INTO " + sqlescape.EscapeID(topoproto.TabletDbName(destTablet.Tablet)) + "." +
+				sqlescape.EscapeID(tableName) + " (" + strings.Join(escapeAll(fieldResult.Fields), ", ") +
+				") VALUES (" + strings.Join(values, ",") + ")"
 			log.Infoln(insertSql)
 			if *dry {
 				log.Infoln("not running because dry")
