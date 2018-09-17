@@ -446,6 +446,7 @@ message StreamExecuteRequest {
   Target target = 3;
   BoundQuery query = 4;
   ExecuteOptions options = 5;
+  int64 transaction_id = 6;
 }
 
 // StreamExecuteResponse is the returned value from StreamExecute

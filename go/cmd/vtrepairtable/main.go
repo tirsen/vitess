@@ -169,7 +169,7 @@ func main() {
 	var rowCount = 0
 	// This disables rowlimit and query timeout so we can process the entire table
 	executeOptions := query.ExecuteOptions{Workload: query.ExecuteOptions_OLAP}
-	err = sourceReplicaQs.StreamExecute(ctx, &sourceReplicaTarget, selectSql, make(map[string]*query.BindVariable), &executeOptions, func(result *sqltypes.Result) error {
+	err = sourceReplicaQs.StreamExecute(ctx, &sourceReplicaTarget, selectSql, make(map[string]*query.BindVariable), 0, &executeOptions, func(result *sqltypes.Result) error {
 		if len(result.Rows) == 0 {
 			return nil
 		}

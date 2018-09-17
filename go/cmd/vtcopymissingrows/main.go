@@ -164,7 +164,7 @@ func main() {
 	var rowsInDest = make(map[string]bool)
 	var destRowCount = 0
 	log.Infoln(selectPkSql)
-	err = destReplicaQs.StreamExecute(ctx, &destReplicaTarget, selectPkSql, make(map[string]*query.BindVariable), &executeOptions, func(result *sqltypes.Result) error {
+	err = destReplicaQs.StreamExecute(ctx, &destReplicaTarget, selectPkSql, make(map[string]*query.BindVariable), 0, &executeOptions, func(result *sqltypes.Result) error {
 		if len(result.Rows) == 0 {
 			return nil
 		}
@@ -192,7 +192,7 @@ func main() {
 	log.Infoln(selectPkAndPrimaryVindexSql)
 	streamCtx, streamCancel := context.WithTimeout(context.Background(), *timeout)
 	defer streamCancel()
-	err = sourceReplicaQs.StreamExecute(streamCtx, &sourceReplicaTarget, selectPkAndPrimaryVindexSql, make(map[string]*query.BindVariable), &executeOptions, func(result *sqltypes.Result) error {
+	err = sourceReplicaQs.StreamExecute(streamCtx, &sourceReplicaTarget, selectPkAndPrimaryVindexSql, make(map[string]*query.BindVariable), 0, &executeOptions, func(result *sqltypes.Result) error {
 		if len(result.Rows) == 0 {
 			return nil
 		}

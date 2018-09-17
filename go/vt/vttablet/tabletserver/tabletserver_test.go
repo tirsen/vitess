@@ -576,6 +576,7 @@ func TestTabletServerTarget(t *testing.T) {
 	}
 
 	// Disallow tx statements if non-master.
+	// TODO: This should now be allowed at the tablet level and produce a RO tx
 	tsv.SetServingType(topodatapb.TabletType_REPLICA, true, nil)
 	_, err = tsv.Begin(ctx, &target1, nil)
 	want = "transactional statement disallowed on non-master tablet"
@@ -1182,7 +1183,7 @@ func TestTabletServerStreamExecute(t *testing.T) {
 	defer tsv.StopService()
 	ctx := context.Background()
 	callback := func(*sqltypes.Result) error { return nil }
-	if err := tsv.StreamExecute(ctx, &target, executeSQL, nil, nil, callback); err != nil {
+	if err := tsv.StreamExecute(ctx, &target, executeSQL, nil, 0, nil, callback); err != nil {
 		t.Fatalf("TabletServer.StreamExecute should success: %s, but get error: %v",
 			executeSQL, err)
 	}

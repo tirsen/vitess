@@ -41,6 +41,10 @@ func (mariadbFlavor) masterGTIDSet(c *Conn) (GTIDSet, error) {
 	return parseMariadbGTIDSet(qr.Rows[0][0].ToString())
 }
 
+func (mariadbFlavor) startSlaveUntilAfter(pos Position) string {
+	panic("not implemented")
+}
+
 func (mariadbFlavor) startSlaveCommand() string {
 	return "START SLAVE"
 }
