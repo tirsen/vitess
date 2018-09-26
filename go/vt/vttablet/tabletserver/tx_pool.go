@@ -233,14 +233,19 @@ func (axp *TxPool) Begin(ctx context.Context, options *querypb.ExecuteOptions) (
 		return 0, err
 	}
 
-	if query, ok := txIsolations[options.GetTransactionIsolation()]; ok {
-		if _, err := conn.Exec(ctx, query, 1, false); err != nil {
+	if options.GetTransactionIsolation() == querypb.ExecuteOptions_CONSISTENT_SNAPSHOT_READ_ONLY {
+		if _, err := conn.Exec(ctx, "start transaction with consistent snapshot, read only", 1, false); err != nil {
 			return 0, err
 		}
-	}
-
-	if _, err := conn.Exec(ctx, "begin", 1, false); err != nil {
-		return 0, err
+	} else {
+		if query, ok := txIsolations[options.GetTransactionIsolation()]; ok {
+			if _, err := conn.Exec(ctx, query, 1, false); err != nil {
+				return 0, err
+			}
+		}
+		if _, err := conn.Exec(ctx, "begin", 1, false); err != nil {
+			return 0, err
+		}
 	}
 
 	beginSucceeded = true

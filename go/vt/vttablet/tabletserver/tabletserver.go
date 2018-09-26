@@ -29,8 +29,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/golang/glog"
-
 	"golang.org/x/net/context"
 
 	"vitess.io/vitess/go/acl"
@@ -739,14 +737,9 @@ func (tsv *TabletServer) SchemaEngine() *schema.Engine {
 
 // Begin starts a new transaction. This is allowed only if the state is StateServing.
 func (tsv *TabletServer) Begin(ctx context.Context, target *querypb.Target, options *querypb.ExecuteOptions) (transactionID int64, err error) {
-	sql := "begin"
-	if tsv.target.TabletType != topodatapb.TabletType_MASTER {
-		glog.Infof("using read only transaction on non-master")
-		sql = "START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY"
-	}
 	err = tsv.execRequest(
 		ctx, tsv.BeginTimeout.Get(),
-		"Begin", sql, nil,
+		"Begin", "begin", nil,
 		target, options, true /* isBegin */, false, /* allowOnShutdown */
 		func(ctx context.Context, logStats *tabletenv.LogStats) error {
 			defer tabletenv.QueryStats.Record("BEGIN", time.Now())

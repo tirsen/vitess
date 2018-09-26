@@ -51,8 +51,8 @@ type TabletDiffWorker struct {
 	StatusWorker
 	// These fields are set at creation time and does not change
 	wr               *wrangler.Wrangler
-	srcTablet        string
-	dstTablet        string
+	sourceTablet     string
+	destTablet       string
 	cleaner          *wrangler.Cleaner
 	concurrentTables int64
 	excludedTables   []string
@@ -73,8 +73,8 @@ func NewTabletDiffWorker(wr *wrangler.Wrangler, srcTablet, dstTablet string, par
 	return &TabletDiffWorker{
 		StatusWorker:     NewStatusWorker(),
 		wr:               wr,
-		srcTablet:        srcTablet,
-		dstTablet:        dstTablet,
+		sourceTablet:     srcTablet,
+		destTablet:       dstTablet,
 		cleaner:          cleaner,
 		concurrentTables: parallelDiffsCount,
 		excludedTables:   excludedTablets,
@@ -85,7 +85,7 @@ func NewTabletDiffWorker(wr *wrangler.Wrangler, srcTablet, dstTablet string, par
 func (mdw *TabletDiffWorker) StatusAsHTML() template.HTML {
 	state := mdw.State()
 
-	result := "<b>Table diffing between :</b> " + mdw.srcTablet + " and " + mdw.dstTablet + "</br>\n"
+	result := "<b>Table diffing between :</b> " + mdw.sourceTablet + " and " + mdw.destTablet + "</br>\n"
 	result += "<b>State:</b> " + state.String() + "</br>\n"
 	switch state {
 	case WorkerStateDiff:
@@ -103,7 +103,7 @@ func (mdw *TabletDiffWorker) StatusAsHTML() template.HTML {
 func (mdw *TabletDiffWorker) StatusAsText() string {
 	state := mdw.State()
 
-	result := "Table diffing between : [" + mdw.srcTablet + "] and [" + mdw.dstTablet + "]\n"
+	result := "Table diffing between : [" + mdw.sourceTablet + "] and [" + mdw.destTablet + "]\n"
 	result += "State: " + state.String() + "\n"
 	switch state {
 	case WorkerStateDiff:
@@ -172,14 +172,14 @@ func (mdw *TabletDiffWorker) init(ctx context.Context) error {
 	mdw.SetState(WorkerStateInit)
 
 	var err error
-	mdw.destAlias, err = topoproto.ParseTabletAlias(mdw.dstTablet)
+	mdw.destAlias, err = topoproto.ParseTabletAlias(mdw.destTablet)
 	if err != nil {
-		return fmt.Errorf("cannot parse table alias %s\n%v", mdw.dstTablet, err)
+		return fmt.Errorf("cannot parse table alias %s\n%v", mdw.destTablet, err)
 	}
 
-	mdw.sourceAlias, err = topoproto.ParseTabletAlias(mdw.srcTablet)
+	mdw.sourceAlias, err = topoproto.ParseTabletAlias(mdw.sourceTablet)
 	if err != nil {
-		return fmt.Errorf("cannot parse table alias %s\n%v", mdw.srcTablet, err)
+		return fmt.Errorf("cannot parse table alias %s\n%v", mdw.sourceTablet, err)
 	}
 
 	shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
@@ -238,7 +238,11 @@ func (mdw *TabletDiffWorker) pauseReplicationAndOpenTx(ctx context.Context) erro
 	mdw.transactions = make([]int64, mdw.concurrentTables)
 
 	for i := 0; i < len(mdw.transactions); i++ {
-		tx, err := queryService.Begin(ctx, sourceTarget, nil)
+		tx, err := queryService.Begin(ctx, sourceTarget, &query.ExecuteOptions{
+			// Make sure our tx is not killed by tx sniper
+			Workload:             query.ExecuteOptions_DBA,
+			TransactionIsolation: query.ExecuteOptions_CONSISTENT_SNAPSHOT_READ_ONLY,
+		})
 		// TODO RecordSlaveAction roll back transaction
 		if err != nil {
 			return fmt.Errorf("could not open transaction on source %v\n%v", mdw.source.Tablet, err)
@@ -295,11 +299,16 @@ func (mdw *TabletDiffWorker) diff(ctx context.Context) error {
 	wg := &sync.WaitGroup{}
 
 	// Start as many goroutines as we want concurrent diffs happening
-	for tx := range mdw.transactions {
+	for _, tx := range mdw.transactions {
 		wg.Add(1)
 		go func(txID int64) {
 			defer wg.Done()
-			defer RollbackTransaction(ctx, mdw.wr.TopoServer(), mdw.sourceAlias, txID)
+			defer func() {
+				err := RollbackTransaction(ctx, mdw.wr.TopoServer(), mdw.sourceAlias, txID)
+				if err != nil {
+					mdw.wr.Logger().Errorf("could not roll back transaction: %v", err)
+				}
+			}()
 			for table := range tableChan {
 				if !mdw.tableIsExcluded(table.Name) {
 					if err = checkDone(ctx); err != nil {
@@ -317,19 +326,15 @@ func (mdw *TabletDiffWorker) diff(ctx context.Context) error {
 			}
 		}(int64(tx))
 	}
-	mdw.wr.Logger().Infof("Transactions created on source")
 
 	wg.Wait()
 	close(diffErrors)
 	var finalErr error
 
-	select {
-	case e := <-diffErrors:
+	for e := range diffErrors {
 		if e != nil {
 			finalErr = errors.New("some validation errors - see log" + e.Error())
 		}
-	default:
-
 	}
 	return finalErr
 }
