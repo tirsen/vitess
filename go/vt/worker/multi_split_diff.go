@@ -90,7 +90,7 @@ func NewMultiSplitDiffWorker(wr *wrangler.Wrangler, cell, keyspace, shard string
 		destinationTabletType:             tabletType,
 		parallelDiffsCount:                parallelDiffsCount,
 		waitForFixedTimeRatherThanGtidSet: waitForFixedTimeRatherThanGtidSet,
-		cleaner: &wrangler.Cleaner{},
+		cleaner:                           &wrangler.Cleaner{},
 	}
 }
 
@@ -391,23 +391,22 @@ func (msdw *MultiSplitDiffWorker) synchronizeReplication(ctx context.Context) er
 		msdw.wr.Logger().Infof("Stopping master binlog replication on %v", shardInfo.MasterAlias)
 		shortCtx, cancel := context.WithTimeout(ctx, *remoteActionsTimeout)
 		_, err := msdw.wr.TabletManagerClient().VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StopVReplication(msdw.sourceUID, "for split diff"))
+		cancel()
 		if err != nil {
-			cancel()
 			return fmt.Errorf("VReplicationExec(stop) for %v failed: %v", shardInfo.MasterAlias, err)
 		}
 		wrangler.RecordVReplicationAction(msdw.cleaner, masterInfo.Tablet, binlogplayer.StartVReplication(msdw.sourceUID))
+		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
 		p3qr, err := msdw.wr.TabletManagerClient().VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.ReadVReplicationPos(msdw.sourceUID))
+		cancel()
 		if err != nil {
-			cancel()
 			return fmt.Errorf("VReplicationExec(stop) for %v failed: %v", msdw.shardInfo.MasterAlias, err)
 		}
 		qr := sqltypes.Proto3ToResult(p3qr)
 		if len(qr.Rows) != 1 || len(qr.Rows[0]) != 1 {
-			cancel()
 			return fmt.Errorf("Unexpected result while reading position: %v", qr)
 		}
 		destVreplicationPos[i] = qr.Rows[0][0].ToString()
-		cancel()
 		if err != nil {
 			return fmt.Errorf("StopBlp for %v failed: %v", msdw.shardInfo.MasterAlias, err)
 		}
@@ -435,10 +434,16 @@ func (msdw *MultiSplitDiffWorker) synchronizeReplication(ctx context.Context) er
 		if err != nil {
 			return err
 		}
+		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
+		msdw.wr.TabletManagerClient().StartSlave(shortCtx, sourceTablet.Tablet)
+		cancel()
+		if err != nil {
+			return err
+		}
 
 		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-		defer cancel()
 		mysqlPos, err = msdw.wr.TabletManagerClient().StopSlaveMinimum(shortCtx, sourceTablet.Tablet, vreplicationPos, *remoteActionsTimeout)
+		cancel()
 		if err != nil {
 			return fmt.Errorf("cannot stop slave %v at right binlog position %v: %v", msdw.sourceAlias, vreplicationPos, err)
 		}
@@ -454,15 +459,21 @@ func (msdw *MultiSplitDiffWorker) synchronizeReplication(ctx context.Context) er
 		// 3 - run all the destination masters blp until they've reached that position
 		msdw.wr.Logger().Infof("Restarting master %v until it catches up to %v", shardInfo.MasterAlias, mysqlPos)
 		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-		defer cancel()
 		_, err = msdw.wr.TabletManagerClient().VReplicationExec(shortCtx, masterInfo.Tablet, binlogplayer.StartVReplicationUntil(msdw.sourceUID, mysqlPos))
+		cancel()
 		if err != nil {
 			return fmt.Errorf("VReplication(start until) for %v until %v failed: %v", shardInfo.MasterAlias, mysqlPos, err)
 		}
+		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
 		if err := msdw.wr.TabletManagerClient().VReplicationWaitForPos(shortCtx, masterInfo.Tablet, int(msdw.sourceUID), mysqlPos); err != nil {
+			cancel()
 			return fmt.Errorf("VReplicationWaitForPos for %v until %v failed: %v", shardInfo.MasterAlias, mysqlPos, err)
 		}
+		cancel()
+
+		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
 		masterPos, err := msdw.wr.TabletManagerClient().MasterPosition(shortCtx, masterInfo.Tablet)
+		cancel()
 		if err != nil {
 			return fmt.Errorf("MasterPosition for %v failed: %v", msdw.shardInfo.MasterAlias, err)
 		}
@@ -500,14 +511,10 @@ func (msdw *MultiSplitDiffWorker) synchronizeReplication(ctx context.Context) er
 
 		msdw.wr.Logger().Infof("Restarting filtered replication on master %v", shardInfo.MasterAlias)
 		shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
-		defer cancel()
 		if _, err = msdw.wr.TabletManagerClient().VReplicationExec(ctx, masterInfo.Tablet, binlogplayer.StartVReplication(msdw.sourceUID)); err != nil {
 			return fmt.Errorf("VReplicationExec(start) failed for %v: %v", shardInfo.MasterAlias, err)
 		}
 		cancel()
-		if err != nil {
-			return fmt.Errorf("StartBlp failed for %v: %v", shardInfo.MasterAlias, err)
-		}
 	}
 
 	return nil
