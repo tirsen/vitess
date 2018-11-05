@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+# builds the square vitess docker image from the pwd and pushes a runnable image to ECR and GCR
+# assumes GIT_COMMIT and GIT_BRANCH are set (which is true if run on kochiku)
+
+# First we build using the regular vitess Dockerfile
+BUILD_DOCKER_TAG=square-vitess-build-${GIT_COMMIT}
+docker build -t "$BUILD_DOCKER_TAG" --build-arg CGO_ENABLED=0 .
+
+# Now we build the vitess image we intend on running
+# The underlying Dockerfile should be using an image tagged with $BUILD_DOCKER_TAG
+# This is done so we can continue to use the normal vitess Dockerfile in the above build.
+RUNNABLE_DOCKER_TAG=square-vitess-${GIT_COMMIT}
+docker build -t "$RUNNABLE_DOCKER_TAG" --build-arg GIT_COMMIT="${GIT_COMMIT}" --file square/Dockerfile .
+
+
+if [[ "$GIT_BRANCH" != "master"  && -z "${KOCHIKU_CANARY_BUILD:-}" ]]; then
+  echo "Git branch is not master or canary, not pushing image."
+  exit 0
+fi
+
+# Log into ECR so we can push the image.
+AWS_REGION=us-east-1
+export SECRET=$SECRETS_PATH/kochiku-worker-cash-aws-production.yaml
+export AWS_ACCESS_KEY_ID=$(ruby -ryaml -e "puts YAML.load_file(ENV['SECRET'])['aws_access_key_id']")
+set +x
+export AWS_SECRET_ACCESS_KEY=$(ruby -ryaml -e "puts YAML.load_file(ENV['SECRET'])['aws_secret_access_key']")
+export AWS_ACCOUNT_ID=912375853625
+$(aws ecr get-login --no-include-email --region $AWS_REGION)
+set -x
+
+# Push image to production ECR
+ECR_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/square-vitess
+docker tag $RUNNABLE_DOCKER_TAG $ECR_IMAGE:$RUNNABLE_DOCKER_TAG
+
+# Check if a production repository exists
+if [[ $(aws ecr describe-repositories --registry-id $AWS_ACCOUNT_ID --repository-names square-vitess --region $AWS_REGION) ]]; then
+  docker push $ECR_IMAGE:$RUNNABLE_DOCKER_TAG
+  # Tag with latest if this is the master branch
+  if [[ "$GIT_BRANCH" == "master" ]]; then
+    docker tag $RUNNABLE_DOCKER_TAG $ECR_IMAGE:square-vitess-latest
+    docker push $ECR_IMAGE:square-vitess-latest
+  fi
+else
+  echo "Production repository does not exist with name $REPO, not pushing image to production."
+fi
