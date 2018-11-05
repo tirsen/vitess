@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Invoked by kochiku (go/kochiku: https://kochiku.sso.global.square/go/square/master)
+# Variables set by kochiku:
+# TEST_RUNNER: from kochiku.yml target.type
+# RUN_LIST: from kochiku.yaml matches for target.glob
+
+set -euxo pipefail
+
+case "$TEST_RUNNER" in
+  promote_docker_image)
+    square/script/ci-docker
+    exit
+    ;;
+esac
+
