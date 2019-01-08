@@ -30,6 +30,7 @@ import java.security.UnrecoverableEntryException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.security.spec.InvalidKeySpecException;
 import java.util.Arrays;
 import java.util.Enumeration;
 
@@ -199,14 +200,21 @@ public class GrpcClientFactory implements RpcClientFactory {
       keystoreType = Constants.DEFAULT_KEYSTORE_TYPE;
     }
     try {
-      final KeyStore keyStore = KeyStore.getInstance(keystoreType);
       final char[] password = keyStorePassword == null ? null : keyStorePassword.toCharArray();
+
+      if (keystoreType.equalsIgnoreCase("PEM")) {
+        PemKeyStore pemKeyStore = new PemKeyStore();
+        pemKeyStore.load(keyStoreFile);
+        return pemKeyStore.toKeyStore("key", password, password);
+      }
+
+      final KeyStore keyStore = KeyStore.getInstance(keystoreType);
       try (final FileInputStream fis = new FileInputStream(keyStoreFile)) {
         keyStore.load(fis, password);
       }
       return keyStore;
-    } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException | IOException e) {
-      return null;
+    } catch (KeyStoreException | CertificateException | NoSuchAlgorithmException | IOException | InvalidKeySpecException e) {
+      throw new RuntimeException("Could not load keystore: " + keyStoreFile, e);
     }
   }
 
@@ -307,7 +315,7 @@ public class GrpcClientFactory implements RpcClientFactory {
 
     // Try loading the private key with the key password (which can be null)
     try {
-      final char[] pass = keyPassword == null ? null : keyPassword.toCharArray();
+      final char[] pass = keyPassword == null ? new char[0] : keyPassword.toCharArray();
       final KeyStore.PrivateKeyEntry entry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(alias, new KeyStore.PasswordProtection(pass));
       return new PrivateKeyWrapper(entry.getPrivateKey(), keyPassword, entry.getCertificateChain());
     } catch (KeyStoreException | NoSuchAlgorithmException e) {
