@@ -1553,8 +1553,8 @@ func truncateSQLAndBindVars(sql string, bindVariables map[string]*querypb.BindVa
 	sort.Strings(keys)
 	var valString string
 	for _, key := range keys {
-		valString = fmt.Sprintf("%v", bindVariables[key])
-		fmt.Fprintf(buf, "%s: %q", key, valString)
+		valString = fmt.Sprintf("type:%v", bindVariables[key].Type)
+		fmt.Fprintf(buf, "%s: %q ", key, valString)
 	}
 	fmt.Fprintf(buf, "}")
 	bv := string(buf.Bytes())
@@ -2187,8 +2187,8 @@ func queryAsString(sql string, bindVariables map[string]*querypb.BindVariable) s
 	sort.Strings(keys)
 	var valString string
 	for _, key := range keys {
-		valString = fmt.Sprintf("%v", bindVariables[key])
-		fmt.Fprintf(buf, "%s: %q", key, valString)
+		valString = fmt.Sprintf("type:%v", bindVariables[key].Type)
+		fmt.Fprintf(buf, "%s: %q ", key, valString)
 	}
 	fmt.Fprintf(buf, "}")
 	return string(buf.Bytes())
