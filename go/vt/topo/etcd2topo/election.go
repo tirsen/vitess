@@ -27,7 +27,7 @@ import (
 )
 
 // NewMasterParticipation is part of the topo.Server interface
-func (s *Server) NewMasterParticipation(name, id string) (topo.MasterParticipation, error) {
+func (s *Server) NewMasterParticipation(_ context.Context, name, id string) (topo.MasterParticipation, error) {
 	return &etcdMasterParticipation{
 		s:    s,
 		name: name,

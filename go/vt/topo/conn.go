@@ -169,7 +169,7 @@ type Conn interface {
 	// is the common usage. Id must be unique for each process
 	// calling this, for a given name. Calling this function does
 	// not make the current process a candidate for the election.
-	NewMasterParticipation(name, id string) (MasterParticipation, error)
+	NewMasterParticipation(ctx context.Context, name, id string) (MasterParticipation, error)
 
 	// Close closes the connection to the server.
 	Close()

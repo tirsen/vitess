@@ -204,7 +204,7 @@ func OpenServer(implementation, serverAddress, root string) (*Server, error) {
 	if !ok {
 		return nil, NewError(NoImplementation, implementation)
 	}
-	return NewWithFactory(factory, serverAddress, root)
+	return NewWithFactory(&TracingFactory{ServiceName: implementation, Inner: factory}, serverAddress, root)
 }
 
 // Open returns a Server using the command line parameter flags

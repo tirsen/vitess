@@ -21,6 +21,7 @@ import (
 	"flag"
 
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/trace"
 	"vitess.io/vitess/go/vt/dbconfigs"
 	"vitess.io/vitess/go/vt/log"
 	"vitess.io/vitess/go/vt/mysqlctl"
@@ -55,6 +56,9 @@ func main() {
 	if err := tabletenv.VerifyConfig(); err != nil {
 		log.Exitf("invalid config: %v", err)
 	}
+
+	closer := trace.SetJaegerTracingForService("vttablet")
+	defer closer.Close()
 
 	tabletenv.Init()
 

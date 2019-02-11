@@ -349,7 +349,7 @@ func (blw *BackfillLookupWorker) init(ctx context.Context) error {
 	// Start watchers to get tablets added automatically to healthCheck.
 	allShards := append(blw.sourceShards, blw.destinationShards...)
 	for _, si := range allShards {
-		watcher := discovery.NewShardReplicationWatcher(blw.wr.TopoServer(), blw.healthCheck,
+		watcher := discovery.NewShardReplicationWatcher(ctx, blw.wr.TopoServer(), blw.healthCheck,
 			blw.cell, si.Keyspace(), si.ShardName(),
 			*healthCheckTopologyRefresh, discovery.DefaultTopoReadConcurrency)
 		blw.shardWatchers = append(blw.shardWatchers, watcher)

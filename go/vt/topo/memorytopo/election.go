@@ -26,7 +26,7 @@ import (
 )
 
 // NewMasterParticipation is part of the topo.Server interface
-func (c *Conn) NewMasterParticipation(name, id string) (topo.MasterParticipation, error) {
+func (c *Conn) NewMasterParticipation(ctx context.Context, name, id string) (topo.MasterParticipation, error) {
 	c.factory.mu.Lock()
 	defer c.factory.mu.Unlock()
 

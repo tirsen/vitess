@@ -21,6 +21,8 @@ package grpcclient
 import (
 	"flag"
 
+	"github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -97,6 +99,11 @@ func Dial(target string, failFast FailFast, opts ...grpc.DialOption) (*grpc.Clie
 		newopts = append(newopts, grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor))
 		newopts = append(newopts, grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor))
 	}
+
+	tracer := opentracing.GlobalTracer()
+
+	newopts = append(newopts, grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)))
+	newopts = append(newopts, grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(tracer)))
 
 	return grpc.Dial(target, newopts...)
 }

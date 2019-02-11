@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"vitess.io/vitess/go/trace"
 
 	"vitess.io/vitess/go/flagutil"
 	"vitess.io/vitess/go/vt/log"
@@ -99,14 +100,16 @@ func runWorkflowManagerElection(ts *topo.Server) {
 	// We use servenv.ListeningURL which is only populated during Run,
 	// so we have to start this with OnRun.
 	servenv.OnRun(func() {
-		ctx := context.Background()
+		span, ctx := trace.NewSpan(context.Background(), "WorkflowManagerElection", trace.Local)
+		defer span.Finish()
+
 		conn, err := ts.ConnForCell(ctx, topo.GlobalCell)
 		if err != nil {
 			log.Errorf("Cannot get global cell topo connection, disabling workflow manager: %v", err)
 			return
 		}
 
-		mp, err = conn.NewMasterParticipation("vtctld", servenv.ListeningURL.Host)
+		mp, err = conn.NewMasterParticipation(ctx, "vtctld", servenv.ListeningURL.Host)
 		if err != nil {
 			log.Errorf("Cannot start MasterParticipation, disabling workflow manager: %v", err)
 			return

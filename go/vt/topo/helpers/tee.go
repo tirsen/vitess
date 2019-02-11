@@ -224,6 +224,6 @@ func (ld *teeTopoLockDescriptor) Unlock(ctx context.Context) error {
 }
 
 // NewMasterParticipation is part of the topo.Conn interface.
-func (c *TeeConn) NewMasterParticipation(name, id string) (topo.MasterParticipation, error) {
-	return c.primary.NewMasterParticipation(name, id)
+func (c *TeeConn) NewMasterParticipation(ctx context.Context, name, id string) (topo.MasterParticipation, error) {
+	return c.primary.NewMasterParticipation(ctx, name, id)
 }

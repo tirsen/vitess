@@ -136,11 +136,11 @@ func (st *StatsConn) Watch(ctx context.Context, filePath string) (current *Watch
 }
 
 // NewMasterParticipation is part of the Conn interface
-func (st *StatsConn) NewMasterParticipation(name, id string) (MasterParticipation, error) {
+func (st *StatsConn) NewMasterParticipation(ctx context.Context, name, id string) (MasterParticipation, error) {
 	startTime := time.Now()
 	statsKey := []string{"NewMasterParticipation", st.cell}
 	defer topoStatsConnTimings.Record(statsKey, startTime)
-	res, err := st.conn.NewMasterParticipation(name, id)
+	res, err := st.conn.NewMasterParticipation(ctx, name, id)
 	if err != nil {
 		topoStatsConnErrors.Add(statsKey, int64(1))
 		return res, err

@@ -56,7 +56,7 @@ func checkElection(t *testing.T, ts *topo.Server) {
 
 	// create a new MasterParticipation
 	id1 := "id1"
-	mp1, err := conn.NewMasterParticipation(name, id1)
+	mp1, err := conn.NewMasterParticipation(context.Background(), name, id1)
 	if err != nil {
 		t.Fatalf("cannot create mp1: %v", err)
 	}
@@ -89,7 +89,7 @@ func checkElection(t *testing.T, ts *topo.Server) {
 
 	// create a second MasterParticipation on same name
 	id2 := "id2"
-	mp2, err := conn.NewMasterParticipation(name, id2)
+	mp2, err := conn.NewMasterParticipation(context.Background(), name, id2)
 	if err != nil {
 		t.Fatalf("cannot create mp2: %v", err)
 	}

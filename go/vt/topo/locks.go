@@ -214,14 +214,13 @@ func CheckKeyspaceLocked(ctx context.Context, keyspace string) error {
 
 // lockKeyspace will lock the keyspace in the topology server.
 // unlockKeyspace should be called if this returns no error.
-func (l *Lock) lockKeyspace(ctx context.Context, ts *Server, keyspace string) (LockDescriptor, error) {
+func (l *Lock) lockKeyspace(outer context.Context, ts *Server, keyspace string) (LockDescriptor, error) {
 	log.Infof("Locking keyspace %v for action %v", keyspace, l.Action)
 
-	ctx, cancel := context.WithTimeout(ctx, *RemoteOperationTimeout)
+	ctxWithTimeout, cancel := context.WithTimeout(outer, *RemoteOperationTimeout)
 	defer cancel()
 
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.LockKeyspaceForAction")
+	span, ctx := trace.NewSpan(ctxWithTimeout, "TopoServer.LockKeyspaceForAction", trace.Client)
 	span.Annotate("action", l.Action)
 	span.Annotate("keyspace", keyspace)
 	defer span.Finish()
@@ -235,18 +234,15 @@ func (l *Lock) lockKeyspace(ctx context.Context, ts *Server, keyspace string) (L
 }
 
 // unlockKeyspace unlocks a previously locked keyspace.
-func (l *Lock) unlockKeyspace(ctx context.Context, ts *Server, keyspace string, lockDescriptor LockDescriptor, actionError error) error {
+func (l *Lock) unlockKeyspace(in context.Context, ts *Server, keyspace string, lockDescriptor LockDescriptor, actionError error) error {
 	// Detach from the parent timeout, but copy the trace span.
 	// We need to still release the lock even if the parent
 	// context timed out.
-	// Note that we are not using the user provided RemoteOperationTimeout
-	// here because it is possible that that timeout is too short.
-	ctx = trace.CopySpan(context.TODO(), ctx)
+	ctx := trace.CopySpan(context.TODO(), in)
 	ctx, cancel := context.WithTimeout(ctx, defaultLockTimeout)
 	defer cancel()
 
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.UnlockKeyspaceForAction")
+	span, ctx := trace.NewSpan(ctx, "TopoServer.UnlockKeyspaceForAction", trace.Client)
 	span.Annotate("action", l.Action)
 	span.Annotate("keyspace", keyspace)
 	defer span.Finish()
@@ -357,14 +353,13 @@ func CheckShardLocked(ctx context.Context, keyspace, shard string) error {
 
 // lockShard will lock the shard in the topology server.
 // UnlockShard should be called if this returns no error.
-func (l *Lock) lockShard(ctx context.Context, ts *Server, keyspace, shard string) (LockDescriptor, error) {
+func (l *Lock) lockShard(in context.Context, ts *Server, keyspace, shard string) (LockDescriptor, error) {
 	log.Infof("Locking shard %v/%v for action %v", keyspace, shard, l.Action)
 
-	ctx, cancel := context.WithTimeout(ctx, *RemoteOperationTimeout)
+	ctx, cancel := context.WithTimeout(in, *RemoteOperationTimeout)
 	defer cancel()
 
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.LockShardForAction")
+	span, ctx := trace.NewSpan(ctx, "TopoServer.LockShardForAction", trace.Client)
 	span.Annotate("action", l.Action)
 	span.Annotate("keyspace", keyspace)
 	span.Annotate("shard", shard)
@@ -388,8 +383,8 @@ func (l *Lock) unlockShard(ctx context.Context, ts *Server, keyspace, shard stri
 	ctx, cancel := context.WithTimeout(ctx, defaultLockTimeout)
 	defer cancel()
 
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.UnlockShardForAction")
+	// We create a span, and get a context that contains said span, so it get propagated
+	span,ctx := trace.NewSpan(ctx, "TopoServer.UnlockShardForAction", trace.Client)
 	span.Annotate("action", l.Action)
 	span.Annotate("keyspace", keyspace)
 	span.Annotate("shard", shard)

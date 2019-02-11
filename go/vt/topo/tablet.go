@@ -21,11 +21,11 @@ import (
 	"path"
 	"sync"
 
+  "github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
+
 	"vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/vterrors"
-
-	"github.com/golang/protobuf/proto"
 	"vitess.io/vitess/go/event"
 	"vitess.io/vitess/go/netutil"
 	"vitess.io/vitess/go/trace"
@@ -222,9 +222,9 @@ func (ts *Server) GetTablet(ctx context.Context, alias *topodatapb.TabletAlias) 
 		return nil, err
 	}
 
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.GetTablet")
+	span, ctx := trace.NewSpan(ctx, "TopoServer.GetTablet", trace.Client)
 	span.Annotate("tablet", topoproto.TabletAliasString(alias))
+
 	defer span.Finish()
 
 	tabletPath := path.Join(TabletsPath, topoproto.TabletAliasString(alias), TabletFile)
@@ -251,8 +251,7 @@ func (ts *Server) UpdateTablet(ctx context.Context, ti *TabletInfo) error {
 		return err
 	}
 
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.UpdateTablet")
+	span, ctx := trace.NewSpan(ctx, "TopoServer.UpdateTablet", trace.Client)
 	span.Annotate("tablet", topoproto.TabletAliasString(ti.Alias))
 	defer span.Finish()
 
@@ -281,8 +280,7 @@ func (ts *Server) UpdateTablet(ctx context.Context, ti *TabletInfo) error {
 // If the update method returns ErrNoUpdateNeeded, nothing is written,
 // and nil,nil is returned.
 func (ts *Server) UpdateTabletFields(ctx context.Context, alias *topodatapb.TabletAlias, update func(*topodatapb.Tablet) error) (*topodatapb.Tablet, error) {
-	span := trace.NewSpanFromContext(ctx)
-	span.StartClient("TopoServer.UpdateTabletFields")
+	span, ctx := trace.NewSpan(ctx, "TopoServer.UpdateTabletFields", trace.Client)
 	span.Annotate("tablet", topoproto.TabletAliasString(alias))
 	defer span.Finish()
 
@@ -405,8 +403,7 @@ func DeleteTabletReplicationData(ctx context.Context, ts *Server, tablet *topoda
 // incomplete, meaning some tablets couldn't be read.
 // The map is indexed by topoproto.TabletAliasString(tablet alias).
 func (ts *Server) GetTabletMap(ctx context.Context, tabletAliases []*topodatapb.TabletAlias) (map[string]*TabletInfo, error) {
-	span := trace.NewSpanFromContext(ctx)
-	span.StartLocal("topo.GetTabletMap")
+	span, ctx := trace.NewSpan(ctx, "topo.GetTabletMap", trace.Local)
 	span.Annotate("num_tablets", len(tabletAliases))
 	defer span.Finish()
 

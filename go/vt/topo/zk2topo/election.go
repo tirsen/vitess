@@ -32,14 +32,13 @@ import (
 
 // NewMasterParticipation is part of the topo.Server interface.
 // We use the full path: <root path>/election/<name>
-func (zs *Server) NewMasterParticipation(name, id string) (topo.MasterParticipation, error) {
-	ctx := context.TODO()
-
+func (zs *Server) NewMasterParticipation(ctx context.Context, name, id string) (topo.MasterParticipation, error) {
 	zkPath := path.Join(zs.root, electionsPath, name)
 
 	// Create the toplevel directory, OK if it exists already.
 	// We will create the parent directory as well, but not more.
-	if _, err := CreateRecursive(ctx, zs.conn, zkPath, nil, 0, zk.WorldACL(PermDirectory), 1); err != nil && err != zk.ErrNodeExists {
+	_, err := CreateRecursive(ctx, zs.conn, zkPath, nil, 0, zk.WorldACL(PermDirectory), 1)
+	if err != nil && err != zk.ErrNodeExists {
 		return nil, convertError(err, zkPath)
 	}
 
@@ -49,7 +48,7 @@ func (zs *Server) NewMasterParticipation(name, id string) (topo.MasterParticipat
 		id:   []byte(id),
 		done: make(chan struct{}),
 	}
-	result.stopCtx, result.stopCtxCancel = context.WithCancel(context.Background())
+	result.stopCtx, result.stopCtxCancel = context.WithCancel(ctx)
 	return result, nil
 }
 

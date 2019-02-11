@@ -84,7 +84,7 @@ func (st *fakeConn) Watch(ctx context.Context, filePath string) (current *WatchD
 }
 
 // NewMasterParticipation is part of the Conn interface
-func (st *fakeConn) NewMasterParticipation(name, id string) (mp MasterParticipation, err error) {
+func (st *fakeConn) NewMasterParticipation(_ context.Context, name, id string) (mp MasterParticipation, err error) {
 	if name == "error" {
 		return mp, fmt.Errorf("Dummy error")
 
@@ -277,7 +277,7 @@ func TestStatsConnTopoNewMasterParticipation(t *testing.T) {
 	conn := &fakeConn{}
 	statsConn := NewStatsConn("global", conn)
 
-	statsConn.NewMasterParticipation("", "")
+	statsConn.NewMasterParticipation(context.Background(), "", "")
 	timingCounts := topoStatsConnTimings.Counts()["NewMasterParticipation.global"]
 	if got, want := timingCounts, int64(1); got != want {
 		t.Errorf("stats were not properly recorded: got = %d, want = %d", got, want)
@@ -289,7 +289,7 @@ func TestStatsConnTopoNewMasterParticipation(t *testing.T) {
 		t.Errorf("stats were not properly recorded: got = %d, want = %d", got, want)
 	}
 
-	statsConn.NewMasterParticipation("error", "")
+	statsConn.NewMasterParticipation(context.Background(), "error", "")
 
 	// error stats gets emitted
 	errorCount = topoStatsConnErrors.Counts()["NewMasterParticipation.global"]
