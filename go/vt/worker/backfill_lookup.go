@@ -373,9 +373,35 @@ func (blw *BackfillLookupWorker) initShards(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cannot FindAllShardsInKeyspace in %v: %v", blw.sourceKeyspace, err)
 	}
+
+	srvKeyspace, err := blw.wr.TopoServer().GetSrvKeyspace(ctx, blw.cell, blw.sourceKeyspace)
+	if err != nil {
+		return fmt.Errorf("cannot GetSrvKeyspace for %v: %v", blw.sourceKeyspace, err)
+	}
+
 	blw.sourceShards = make([]*topo.ShardInfo, 0, len(sourceShards))
 	for _, shard := range sourceShards {
-		blw.sourceShards = append(blw.sourceShards, shard)
+		for _, partition := range srvKeyspace.Partitions {
+			if partition.GetServedType() != blw.tabletType {
+				continue
+			}
+			for _, group := range partition.GetShardReferences() {
+				if group.KeyRange.String() == shard.KeyRange.String() {
+					blw.wr.Logger().Infof("Using shard %v as source for %v/%v", shard.ShardName(), blw.cell, blw.sourceKeyspace)
+					blw.sourceShards = append(blw.sourceShards, shard)
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if len(blw.sourceShards) == 0 {
+		return fmt.Errorf("no valid shards found for %v", blw.destinationKeyspace)
+	}
+
+	if !blw.validateContiguousKeyspace([]byte{}, []byte{}) {
+		return fmt.Errorf("source shards do not cover the full keyspace")
 	}
 
 	shortCtx, cancel = context.WithTimeout(ctx, *remoteActionsTimeout)
@@ -422,6 +448,45 @@ func (blw *BackfillLookupWorker) initShards(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+/**
+ * validateContiguousKeyspace verifies that the set of shards in blw.sourceShards begins at *start* and ends at *finish*,
+ * and the shards cover the entire keyspace between those two spots. Empty arrays for either value represent the start
+ * or end of the keyspace as a whole.
+ */
+func (blw *BackfillLookupWorker) validateContiguousKeyspace(start, finish []byte) bool {
+	shard := blw.findStart(start)
+	count := 0
+	for shard != nil {
+		count++
+		if byteArraysMatch(shard.KeyRange.End, finish) {
+			return count == len(blw.sourceShards)
+		}
+		shard = blw.findStart(shard.KeyRange.End)
+	}
+	return false
+}
+
+func (blw *BackfillLookupWorker) findStart(position []byte) *topo.ShardInfo {
+	for _, shard := range blw.sourceShards {
+		if byteArraysMatch(shard.KeyRange.Start, position) {
+			return shard
+		}
+	}
+	return nil
+}
+
+func byteArraysMatch(a, b []byte) bool {
+	if len(a) == len(b) {
+		for i, p := range a {
+			if p != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func (blw *BackfillLookupWorker) sanityCheckShardInfos() error {
