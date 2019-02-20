@@ -15,10 +15,11 @@ ARG CGO_ENABLED=0
 USER root
 COPY . /vt/src/vitess.io/vitess
 
+RUN /vt/src/vitess.io/vitess/update-govendor.sh
+
 # Build Vitess
 RUN make build
 
 # Fix permissions
 RUN chown -R vitess:vitess /vt
 USER vitess
-
