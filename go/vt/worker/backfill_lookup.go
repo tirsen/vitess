@@ -29,10 +29,13 @@ import (
 	"vitess.io/vitess/go/sync2"
 	"vitess.io/vitess/go/vt/concurrency"
 	"vitess.io/vitess/go/vt/discovery"
+	"vitess.io/vitess/go/vt/key"
 	"vitess.io/vitess/go/vt/proto/vschema"
+	"vitess.io/vitess/go/vt/proto/vtrpc"
 	"vitess.io/vitess/go/vt/throttler"
 	"vitess.io/vitess/go/vt/topo"
 	"vitess.io/vitess/go/vt/topo/topoproto"
+	"vitess.io/vitess/go/vt/vterrors"
 	"vitess.io/vitess/go/vt/vtgate/vindexes"
 	"vitess.io/vitess/go/vt/vttablet/queryservice"
 	"vitess.io/vitess/go/vt/vttablet/tabletconn"
@@ -76,6 +79,7 @@ type BackfillLookupWorker struct {
 	primaryVindexColumn       string
 	sourceKeyspaceInfo        *topo.KeyspaceInfo
 	destinationKeyspaceInfo   *topo.KeyspaceInfo
+	sourceKeyRange            *topodatapb.KeyRange
 	sourceShards              []*topo.ShardInfo
 	destinationShards         []*topo.ShardInfo
 	sequenceShards            []*topo.ShardInfo
@@ -113,7 +117,7 @@ type BackfillLookupWorker struct {
 
 // newBackfillLookupWorker returns a new BackfillLookupWorker object which is used both by
 // the BackfillLookup and VerticalBackfillLookup command.
-func newBackfillLookupWorker(wr *wrangler.Wrangler, cell, keyspace, vindexName string, tabletType topodatapb.TabletType, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount int, maxTPS, maxReplicationLag int64, skipNullRows bool) (Worker, error) {
+func newBackfillLookupWorker(wr *wrangler.Wrangler, cell, keyspace, vindexName string, tabletType topodatapb.TabletType, sourceRange string, chunkCount, minRowsPerChunk, sourceReaderCount, writeQueryMaxRows, writeQueryMaxSize, destinationWriterCount int, maxTPS, maxReplicationLag int64, skipNullRows bool) (Worker, error) {
 	// Verify user defined flags.
 	if chunkCount <= 0 {
 		return nil, fmt.Errorf("chunk_count must be > 0: %v", chunkCount)
@@ -146,6 +150,14 @@ func newBackfillLookupWorker(wr *wrangler.Wrangler, cell, keyspace, vindexName s
 		return nil, fmt.Errorf("should use MASTER, RDONLY or REPLICA tablets")
 	}
 
+	targetKeyranges, err := key.ParseShardingSpec(sourceRange)
+	if err != nil {
+		return nil, vterrors.Wrapf(err, "unable to parse source range %v: %v", sourceRange)
+	}
+	if len(targetKeyranges) != 1 {
+		return nil, vterrors.Errorf(vtrpc.Code_INVALID_ARGUMENT, "only a single keyrange is currently supported %v", sourceRange)
+	}
+
 	scw := &BackfillLookupWorker{
 		StatusWorker:           NewStatusWorker(),
 		wr:                     wr,
@@ -154,6 +166,7 @@ func newBackfillLookupWorker(wr *wrangler.Wrangler, cell, keyspace, vindexName s
 		vindexName:             vindexName,
 		tabletType:             tabletType,
 		chunkCount:             chunkCount,
+		sourceKeyRange:         targetKeyranges[0],
 		minRowsPerChunk:        minRowsPerChunk,
 		sourceReaderCount:      sourceReaderCount,
 		writeQueryMaxRows:      writeQueryMaxRows,
@@ -381,6 +394,10 @@ func (blw *BackfillLookupWorker) initShards(ctx context.Context) error {
 
 	blw.sourceShards = make([]*topo.ShardInfo, 0, len(sourceShards))
 	for _, shard := range sourceShards {
+		if !key.KeyRangeIncludes(blw.sourceKeyRange, shard.KeyRange) {
+			continue
+		}
+
 		for _, partition := range srvKeyspace.Partitions {
 			if partition.GetServedType() != blw.tabletType {
 				continue
@@ -400,7 +417,7 @@ func (blw *BackfillLookupWorker) initShards(ctx context.Context) error {
 		return fmt.Errorf("no valid shards found for %v", blw.destinationKeyspace)
 	}
 
-	if !blw.validateContiguousKeyspace([]byte{}, []byte{}) {
+	if !blw.validateContiguousKeyspace(blw.sourceKeyRange.Start, blw.sourceKeyRange.End) {
 		return fmt.Errorf("source shards do not cover the full keyspace")
 	}
 
