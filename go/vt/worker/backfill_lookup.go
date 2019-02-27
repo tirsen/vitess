@@ -829,6 +829,7 @@ func (blw *BackfillLookupWorker) backfill(ctx context.Context) error {
 					processError("%v: Creating QueryService for sequence tablet failed: %v", errPrefix, err)
 					return
 				}
+				defer seqQueryService.Close(ctx)
 
 				target = &querypb.Target{
 					Keyspace:   si.Keyspace(),
