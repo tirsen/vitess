@@ -70,7 +70,8 @@ type BackfillLookupWorker struct {
 	tabletTracker          *TabletTracker
 
 	// populated during WorkerStateInit, read-only after that
-	vindex                    *vindexes.LookupHash
+	vindex                    *vindexes.Vindex
+	backfillableVindex        vindexes.Backfillable
 	destinationKeyspace       string
 	destinationTable          string
 	sourceTable               string
@@ -536,11 +537,17 @@ func (blw *BackfillLookupWorker) loadVindex(ctx context.Context) error {
 		panic("found vindex in Keyspace proto but not in KeyspaceSchema")
 	}
 
-	blw.vindex, ok = vindex.(*vindexes.LookupHash)
+	_, ok = vindex.(vindexes.Lookup)
 	if !ok {
-		return fmt.Errorf("can currently only backfill LookupHash")
+		return fmt.Errorf("can currently only backfill Lookup")
 	}
 
+	blw.backfillableVindex, ok = vindex.(vindexes.Backfillable)
+	if !ok {
+		return fmt.Errorf("can currently only backfill Backfillable")
+	}
+
+	blw.vindex = &vindex
 	blw.sourceTable = vindexDef.Owner
 
 	destinationTable := vindexDef.Params["table"]
@@ -838,6 +845,11 @@ func (blw *BackfillLookupWorker) backfill(ctx context.Context) error {
 				}
 			}
 			transform := func(row []sqltypes.Value) ([]sqltypes.Value, bool, error) {
+				fromValue, err := blw.backfillableVindex.FromValue(row[fromColumnIndex])
+				if err != nil {
+					return nil, false, err
+				}
+
 				if blw.destinationAutoIncrement != nil {
 					bindVars := map[string]*querypb.BindVariable{"n": sqltypes.ValueBindVariable(sqltypes.NewInt64(1))}
 					results, err := seqQueryService.Execute(ctx, target, fmt.Sprintf("select next :n values from %s", blw.destinationAutoIncrement.Sequence), bindVars, 0, nil)
@@ -847,12 +859,12 @@ func (blw *BackfillLookupWorker) backfill(ctx context.Context) error {
 
 					return []sqltypes.Value{
 						results.Rows[0][0],
-						row[fromColumnIndex],
+						fromValue,
 						row[defaultVindexColumnIndex],
 					}, row[fromColumnIndex].IsNull(), nil
 				}
 				return []sqltypes.Value{
-					row[fromColumnIndex],
+					fromValue,
 					row[defaultVindexColumnIndex],
 				}, row[fromColumnIndex].IsNull(), nil
 			}

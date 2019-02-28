@@ -102,6 +102,11 @@ type Lookup interface {
 	Update(vc VCursor, oldValues []sqltypes.Value, ksid []byte, newValues []sqltypes.Value) error
 }
 
+// Backfillable implements methods used while backfilling the Vindex from existing data.
+type Backfillable interface {
+	FromValue(fromValue sqltypes.Value) (sqltypes.Value, error)
+}
+
 // A NewVindexFunc is a function that creates a Vindex based on the
 // properties specified in the input map. Every vindex must
 // register a NewVindexFunc under a unique vindexType.
