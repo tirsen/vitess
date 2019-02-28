@@ -167,7 +167,7 @@ func writeOnlyVindexes(ctx context.Context, wr *wrangler.Wrangler) ([]map[string
 					rec.RecordError(err)
 					return
 				}
-				if writeOnly && vindex.Type == "lookup_hash" {
+				if writeOnly && (vindex.Type == "lookup_hash" || vindex.Type == "lookup_unicodeloosemd5_hash") {
 					mu.Lock()
 					result = append(result, map[string]string{
 						"Keyspace": keyspace,
