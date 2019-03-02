@@ -49,13 +49,15 @@ var (
 // ConnectionPool re-exposes ResourcePool as a pool of
 // PooledDBConnection objects.
 type ConnectionPool struct {
-	mu                  sync.Mutex
-	connections         *pools.ResourcePool
-	capacity            int
-	idleTimeout         time.Duration
-	resolutionFrequency time.Duration
+	mu          sync.Mutex
+	connections pools.Pool
+	impl        pools.Impl
+	capacity    int
+	idleTimeout time.Duration
+	minActive   int
+  resolutionFrequency time.Duration
 
-	// info and mysqlStats are set at Open() time
+  // info and mysqlStats are set at Open() time
 	info      *mysql.ConnParams
 	addresses []net.IP
 
@@ -69,15 +71,22 @@ type ConnectionPool struct {
 
 // NewConnectionPool creates a new ConnectionPool. The name is used
 // to publish stats only.
-func NewConnectionPool(name string, capacity int, idleTimeout time.Duration, dnsResolutionFrequency time.Duration) *ConnectionPool {
-	cp := &ConnectionPool{capacity: capacity, idleTimeout: idleTimeout, resolutionFrequency: dnsResolutionFrequency}
-	if name == "" || usedNames[name] {
+func NewConnectionPool(name string, impl pools.Impl, capacity int, idleTimeout time.Duration, minActive int, dnsResolutionFrequency time.Duration) *ConnectionPool {
+	cp := &ConnectionPool{
+    impl:                impl,
+    capacity:            capacity,
+    idleTimeout:         idleTimeout,
+    minActive:           minActive,
+    resolutionFrequency: dnsResolutionFrequency,
+  }
+  if name == "" || usedNames[name] {
 		return cp
 	}
 	usedNames[name] = true
 	stats.NewGaugeFunc(name+"Capacity", "Connection pool capacity", cp.Capacity)
 	stats.NewGaugeFunc(name+"Available", "Connection pool available", cp.Available)
 	stats.NewGaugeFunc(name+"Active", "Connection pool active", cp.Active)
+	stats.NewGaugeFunc(name+"MinActive", "Connection pool minimum active", cp.MinActive)
 	stats.NewGaugeFunc(name+"InUse", "Connection pool in-use", cp.InUse)
 	stats.NewGaugeFunc(name+"MaxCap", "Connection pool max cap", cp.MaxCap)
 	stats.NewCounterFunc(name+"WaitCount", "Connection pool wait count", cp.WaitCount)
@@ -87,7 +96,7 @@ func NewConnectionPool(name string, capacity int, idleTimeout time.Duration, dns
 	return cp
 }
 
-func (cp *ConnectionPool) pool() (p *pools.ResourcePool) {
+func (cp *ConnectionPool) pool() (p pools.Pool) {
 	cp.mu.Lock()
 	p = cp.connections
 	cp.mu.Unlock()
@@ -145,7 +154,7 @@ func (cp *ConnectionPool) Open(info *mysql.ConnParams, mysqlStats *stats.Timings
 	defer cp.mu.Unlock()
 	cp.info = info
 	cp.mysqlStats = mysqlStats
-	cp.connections = pools.NewResourcePool(cp.connect, cp.capacity, cp.capacity, cp.idleTimeout)
+	cp.connections = pools.New(cp.impl, cp.connect, cp.capacity, cp.capacity, cp.idleTimeout, cp.minActive)
 	// Check if we need to resolve a hostname (The Host is not just an IP  address).
 	if cp.resolutionFrequency > 0 && net.ParseIP(info.Host) == nil {
 		cp.hostIsNotIP = true
@@ -247,7 +256,7 @@ func (cp *ConnectionPool) SetCapacity(capacity int) (err error) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 	if cp.connections != nil {
-		err = cp.connections.SetCapacity(capacity)
+		err = cp.connections.SetCapacity(capacity, true)
 		if err != nil {
 			return err
 		}
@@ -281,7 +290,7 @@ func (cp *ConnectionPool) Capacity() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.Capacity()
+	return int64(p.Capacity())
 }
 
 // Available returns the number of available connections in the pool
@@ -290,7 +299,16 @@ func (cp *ConnectionPool) Available() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.Available()
+	return int64(p.Available())
+}
+
+// MinActive returns the of connections in the pool to keep active
+func (cp *ConnectionPool) MinActive() int64 {
+	p := cp.pool()
+	if p == nil {
+		return 0
+	}
+	return int64(p.MinActive())
 }
 
 // Active returns the number of active connections in the pool
@@ -299,7 +317,7 @@ func (cp *ConnectionPool) Active() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.Active()
+	return int64(p.Active())
 }
 
 // InUse returns the number of in-use connections in the pool
@@ -308,7 +326,7 @@ func (cp *ConnectionPool) InUse() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.InUse()
+	return int64(p.InUse())
 }
 
 // MaxCap returns the maximum size of the pool
@@ -317,7 +335,7 @@ func (cp *ConnectionPool) MaxCap() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.MaxCap()
+	return int64(p.MaxCap())
 }
 
 // WaitCount returns how many clients are waiting for a connection
@@ -326,7 +344,7 @@ func (cp *ConnectionPool) WaitCount() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.WaitCount()
+	return int64(p.WaitCount())
 }
 
 // WaitTime return the pool WaitTime.
@@ -353,5 +371,5 @@ func (cp *ConnectionPool) IdleClosed() int64 {
 	if p == nil {
 		return 0
 	}
-	return p.IdleClosed()
+	return int64(p.IdleClosed())
 }

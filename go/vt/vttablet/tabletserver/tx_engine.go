@@ -114,10 +114,12 @@ func NewTxEngine(checker connpool.MySQLChecker, config tabletenv.TabletConfig) *
 	)
 	te.txPool = NewTxPool(
 		config.PoolNamePrefix,
+		config.PoolImpl(),
 		config.TransactionCap,
 		config.FoundRowsPoolSize,
 		time.Duration(config.TransactionTimeout*1e9),
 		time.Duration(config.IdleTimeout*1e9),
+		config.TxPoolMinActive,
 		config.TxPoolWaiterCap,
 		checker,
 		limiter,
@@ -145,8 +147,10 @@ func NewTxEngine(checker connpool.MySQLChecker, config tabletenv.TabletConfig) *
 	te.preparedPool = NewTxPreparedPool(config.TransactionCap - 2)
 	readPool := connpool.New(
 		config.PoolNamePrefix+"TxReadPool",
+		config.PoolImpl(),
 		3,
 		time.Duration(config.IdleTimeout*1e9),
+		0,
 		checker,
 	)
 	te.twoPC = NewTwoPC(readPool)
