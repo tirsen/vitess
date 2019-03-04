@@ -9,6 +9,7 @@ import (
   "github.com/uber/jaeger-client-go"
   jaegercfg "github.com/uber/jaeger-client-go/config"
   "golang.org/x/net/context"
+  "vitess.io/vitess/go/vt/log"
 )
 
 type JaegerSpan struct {
@@ -62,7 +63,9 @@ func SetJaegerTracingForService(serviceName string) io.Closer {
     return closer
   }
 
-  return nil
+  log.Errorf("failed to start jaeger: %v", err)
+
+  return &nilCloser{}
 }
 
 func (jf OpenTracingFactory) New(parent Span, label string, spanType SpanType) Span {
@@ -94,3 +97,8 @@ func (jf OpenTracingFactory) NewContext(parent context.Context, s Span) context.
   }
   return opentracing.ContextWithSpan(parent, span.otSpan)
 }
+
+type nilCloser struct {
+}
+
+func (c *nilCloser) Close() error { return nil }
