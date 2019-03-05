@@ -11,5 +11,9 @@ case "$TEST_RUNNER" in
     square/script/ci-docker
     exit
     ;;
+  cloud_vitess)
+    square/script/ci-cloud-docker
+    exit
+    ;;
 esac
 
