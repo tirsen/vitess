@@ -995,7 +995,7 @@ func TestMax(t *testing.T) {
 	}, {
 		v1:  TestValue(VarChar, "aa"),
 		v2:  TestValue(VarChar, "aa"),
-		err: vterrors.New(vtrpcpb.Code_UNKNOWN, "types are not comparable: VARCHAR vs VARCHAR"),
+		max: TestValue(VarChar, "aa"),
 	}}
 	for _, tcase := range tcases {
 		v, err := Max(tcase.v1, tcase.v2)
