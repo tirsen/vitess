@@ -638,23 +638,6 @@ func TestRouteSort(t *testing.T) {
 		"1",
 	)
 	expectResult(t, "sel.Execute", result, wantResult)
-
-	vc = &loggingVCursor{
-		shards: []string{"0"},
-		results: []*sqltypes.Result{
-			sqltypes.MakeTestResult(
-				sqltypes.MakeTestFields(
-					"id",
-					"varchar",
-				),
-				"1",
-				"2",
-				"3",
-			),
-		},
-	}
-	_, err = sel.Execute(vc, map[string]*querypb.BindVariable{}, false)
-	expectError(t, "sel.Execute", err, "types are not comparable: VARCHAR vs VARCHAR")
 }
 
 func TestRouteSortTruncate(t *testing.T) {

@@ -276,39 +276,6 @@ func TestOrderedAggregateInputFail(t *testing.T) {
 	}
 }
 
-func TestOrderedAggregateKeysFail(t *testing.T) {
-	fields := sqltypes.MakeTestFields(
-		"col|count(*)",
-		"varchar|decimal",
-	)
-	fp := &fakePrimitive{
-		results: []*sqltypes.Result{sqltypes.MakeTestResult(
-			fields,
-			"a|1",
-			"a|1",
-		)},
-	}
-
-	oa := &OrderedAggregate{
-		Aggregates: []AggregateParams{{
-			Opcode: AggregateCount,
-			Col:    1,
-		}},
-		Keys:  []int{0},
-		Input: fp,
-	}
-
-	want := "types are not comparable: VARCHAR vs VARCHAR"
-	if _, err := oa.Execute(nil, nil, false); err == nil || err.Error() != want {
-		t.Errorf("oa.Execute(): %v, want %s", err, want)
-	}
-
-	fp.rewind()
-	if err := oa.StreamExecute(nil, nil, false, func(_ *sqltypes.Result) error { return nil }); err == nil || err.Error() != want {
-		t.Errorf("oa.StreamExecute(): %v, want %s", err, want)
-	}
-}
-
 func TestOrderedAggregateMergeFail(t *testing.T) {
 	fields := sqltypes.MakeTestFields(
 		"col|count(*)",
