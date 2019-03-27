@@ -945,7 +945,8 @@ func TestMin(t *testing.T) {
 	}, {
 		v1:  TestValue(VarChar, "aa"),
 		v2:  TestValue(VarChar, "aa"),
-		err: vterrors.New(vtrpcpb.Code_UNKNOWN, "types are not comparable: VARCHAR vs VARCHAR"),
+		// gkaszuba: Looks like comparing VarChar now works. This was a failure before.
+		min: TestValue(VarChar, "aa"),
 	}}
 	for _, tcase := range tcases {
 		v, err := Min(tcase.v1, tcase.v2)
