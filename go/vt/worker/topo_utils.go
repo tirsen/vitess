@@ -45,9 +45,9 @@ var (
 
 // FindHealthyTablet returns a random healthy tabletType tablet.
 // Since we don't want to use them all, we require at least
-// minHealthyRdonlyTablets servers to be healthy.
+// minHealthyTablets servers to be healthy.
 // May block up to -wait_for_healthy_rdonly_tablets_timeout.
-func FindHealthyTablet(ctx context.Context, wr *wrangler.Wrangler, tsc *discovery.TabletStatsCache, cell, keyspace, shard string, minHealthyRdonlyTablets int, tabletType topodatapb.TabletType) (*topodatapb.TabletAlias, error) {
+func FindHealthyTablet(ctx context.Context, wr *wrangler.Wrangler, tsc *discovery.TabletStatsCache, cell, keyspace, shard string, minHealthyTablets int, tabletType topodatapb.TabletType) (*topodatapb.TabletAlias, error) {
 	if tsc == nil {
 		// No healthcheck instance provided. Create one.
 		healthCheck := discovery.NewHealthCheck(*healthcheckRetryDelay, *healthCheckTimeout)
@@ -57,7 +57,7 @@ func FindHealthyTablet(ctx context.Context, wr *wrangler.Wrangler, tsc *discover
 		defer healthCheck.Close()
 	}
 
-	healthyTablets, err := waitForHealthyTablets(ctx, wr, tsc, cell, keyspace, shard, minHealthyRdonlyTablets, *waitForHealthyTabletsTimeout, tabletType)
+	healthyTablets, err := waitForHealthyTablets(ctx, wr, tsc, cell, keyspace, shard, minHealthyTablets, *waitForHealthyTabletsTimeout, tabletType)
 	if err != nil {
 		return nil, err
 	}
