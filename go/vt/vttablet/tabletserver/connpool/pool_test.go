@@ -259,7 +259,7 @@ func newPool() *Pool {
 func newPoolOpts(impl pools.Impl, minActive int) *Pool {
 	return New(
 		fmt.Sprintf("TestPool%d", rand.Int63()),
-		pools.ResourceImpl,
+		impl,
 		100,
 		10*time.Second,
 		minActive,
