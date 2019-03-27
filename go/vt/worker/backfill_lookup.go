@@ -153,7 +153,7 @@ func newBackfillLookupWorker(wr *wrangler.Wrangler, cell, keyspace, vindexName s
 
 	targetKeyranges, err := key.ParseShardingSpec(sourceRange)
 	if err != nil {
-		return nil, vterrors.Wrapf(err, "unable to parse source range %v: %v", sourceRange)
+		return nil, vterrors.Wrapf(err, "unable to parse source range %v", sourceRange)
 	}
 	if len(targetKeyranges) != 1 {
 		return nil, vterrors.Errorf(vtrpc.Code_INVALID_ARGUMENT, "only a single keyrange is currently supported %v", sourceRange)
