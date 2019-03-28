@@ -20,28 +20,34 @@ if [[ "$GIT_BRANCH" != "master"  && -z "${KOCHIKU_CANARY_BUILD:-}" ]]; then
   exit 0
 fi
 
-# Log into ECR so we can push the image.
-AWS_REGION=us-east-1
 export SECRET=$SECRETS_PATH/kochiku-worker-cash-aws-production.yaml
 export AWS_ACCESS_KEY_ID=$(ruby -ryaml -e "puts YAML.load_file(ENV['SECRET'])['aws_access_key_id']")
 set +x
 export AWS_SECRET_ACCESS_KEY=$(ruby -ryaml -e "puts YAML.load_file(ENV['SECRET'])['aws_secret_access_key']")
 export AWS_ACCOUNT_ID=912375853625
-$(aws ecr get-login --no-include-email --region $AWS_REGION)
 set -x
 
-# Push image to production ECR
-ECR_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/square-vitess
-docker tag $RUNNABLE_DOCKER_TAG $ECR_IMAGE:$RUNNABLE_DOCKER_TAG
+# Log into ECR so we can push the image.
+for AWS_REGION in us-east-1 us-west-2
+do
+  set +x
+  $(aws ecr get-login --no-include-email --region $AWS_REGION)
+  set -x
 
-# Check if a production repository exists
-if [[ $(aws ecr describe-repositories --registry-id $AWS_ACCOUNT_ID --repository-names square-vitess --region $AWS_REGION) ]]; then
-  docker push $ECR_IMAGE:$RUNNABLE_DOCKER_TAG
-  # Tag with latest if this is the master branch
-  if [[ "$GIT_BRANCH" == "master" ]]; then
-    docker tag $RUNNABLE_DOCKER_TAG $ECR_IMAGE:square-vitess-latest
-    docker push $ECR_IMAGE:square-vitess-latest
+  # Push image to production ECR
+  ECR_IMAGE=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/square-vitess
+  docker tag $RUNNABLE_DOCKER_TAG $ECR_IMAGE:$RUNNABLE_DOCKER_TAG
+
+  # Check if a production repository exists
+  if [[ $(aws ecr describe-repositories --registry-id $AWS_ACCOUNT_ID --repository-names square-vitess --region $AWS_REGION) ]]; then
+    docker push $ECR_IMAGE:$RUNNABLE_DOCKER_TAG
+    # Tag with latest if this is the master branch
+    if [[ "$GIT_BRANCH" == "master" ]]; then
+      docker tag $RUNNABLE_DOCKER_TAG $ECR_IMAGE:square-vitess-latest
+      docker push $ECR_IMAGE:square-vitess-latest
+    fi
+  else
+    echo "Production repository does not exist with name $REPO, not pushing image to production."
   fi
-else
-  echo "Production repository does not exist with name $REPO, not pushing image to production."
-fi
+done
+
