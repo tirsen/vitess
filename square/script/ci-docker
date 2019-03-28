@@ -47,7 +47,7 @@ do
       docker push $ECR_IMAGE:square-vitess-latest
     fi
   else
-    echo "Production repository does not exist with name $REPO, not pushing image to production."
+    echo "Production repository does not exist, not pushing image to production."
   fi
 done
 
