@@ -28,7 +28,7 @@ do
   set -x
 
   # Publish new image
-  remote_image=${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/${REPO}:vitess-${version}
+  remote_image=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPO}:vitess-${version}
   if [[ $(aws ecr describe-repositories --registry-id $AWS_ACCOUNT_ID --repository-names ${REPO} --region $AWS_REGION) ]]; then
     docker tag vitess/slim:latest ${remote_image}
     docker push ${remote_image}
