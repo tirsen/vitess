@@ -122,7 +122,7 @@ func NewFastPool(factory CreateFactory, capacity, maxCap int, idleTimeout time.D
 	return p
 }
 
-// create a resource wrapper. return an error if the factory function failed.
+// create a resource wrapper from the factory.
 func (p *FastPool) create() (resourceWrapper, error) {
 	r, err := p.factory()
 	if err != nil {
@@ -145,38 +145,53 @@ const (
 
 // safeCreate will prevent allocating a resource past the capacity of the pool.
 func (p *FastPool) safeCreate(ct createType) (resourceWrapper, error) {
-	var capacity bool
-	p.withLock(func() {
-		capacity = p.hasFreeCapacity()
-		p.state.Spawning++
-	})
-
-	if !capacity {
-		p.withLock(func() {
-			p.state.Spawning--
-		})
-		return resourceWrapper{}, errNeedToQueue
-	}
-
-	wrapper, err := p.create()
+	err := p.safeCreateBegin()
 	if err != nil {
-		p.withLock(func() {
-			p.state.Spawning--
-		})
 		return resourceWrapper{}, err
 	}
-
-	p.withLock(func() {
-		switch ct {
-		case forUse:
-			p.state.InUse++
-		case forPool:
-			p.state.InPool++
+	defer func() {
+		r := recover()
+		p.safeCreateEnd(ct, err != nil || r != nil)
+		if r != nil {
+			panic(r)
 		}
-		p.state.Spawning--
-	})
+	}()
 
-	return wrapper, nil
+	wrapper, err := p.create()
+	return wrapper, err
+}
+
+// safeCreateBegin sanity checks and increments `state.Spawning`.
+func (p *FastPool) safeCreateBegin() error {
+	p.Lock()
+	defer p.Unlock()
+
+	if !p.hasFreeCapacity() {
+		return errNeedToQueue
+	}
+
+	p.state.Spawning++
+	return nil
+}
+
+// safeCreateBegin sanity checks and decrements `Spawning` as well as
+// incrementing either `InUse` or `InPool`.
+func (p *FastPool) safeCreateEnd(ct createType, didError bool) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.state.Spawning--
+
+	if didError {
+		return
+	}
+
+	switch ct {
+	case forUse:
+		p.state.InUse++
+	case forPool:
+		p.state.InPool++
+	}
 }
 
 // maintainMinActive will keep calling ensureMinActive until quit.
@@ -190,14 +205,7 @@ func (p *FastPool) maintainMinActive() {
 
 // ensureMinActive keeps at least a certain amount of resources instantiated.
 func (p *FastPool) ensureMinActive() {
-	p.Lock()
-	if p.state.MinActive == 0 || p.state.Closed {
-		p.Unlock()
-		return
-	}
-	required := p.state.MinActive - p.active()
-	p.Unlock()
-
+	required := p.requiredResources()
 	for i := 0; i < required; i++ {
 		r, err := p.safeCreate(forPool)
 		if err == errNeedToQueue {
@@ -214,6 +222,18 @@ func (p *FastPool) ensureMinActive() {
 			return
 		}
 	}
+}
+
+// requiredResources returns the number of new resources to create based on MinActive.
+func (p *FastPool) requiredResources() int {
+	p.Lock()
+	defer p.Unlock()
+
+	if p.state.MinActive == 0 || p.state.Closed {
+		return 0
+	}
+
+	return p.state.MinActive - p.active()
 }
 
 // Close empties the pool calling Close on all its resources.
@@ -243,11 +263,7 @@ func (p *FastPool) Get(ctx context.Context) (resource Resource, err error) {
 		if !ok {
 			return nil, ErrClosed
 		}
-
-		p.withLock(func() {
-			p.state.InPool--
-			p.state.InUse++
-		})
+		p.usedFromPool()
 		return wrapper.resource, nil
 
 	case <-ctx.Done():
@@ -269,38 +285,25 @@ func (p *FastPool) Get(ctx context.Context) (resource Resource, err error) {
 // This is called when there is no capacity to create a resource and
 // there is nothing in the pool.
 func (p *FastPool) getQueued(ctx context.Context) (Resource, error) {
-	startTime := time.Now()
-
 	p.withLock(func() {
 		p.state.Waiters++
 	})
+	defer p.withLock(func() {
+		p.state.Waiters--
+	})
 
+	startTime := time.Now()
 	for {
 		select {
 		case wrapper, ok := <-p.pool:
 			if !ok {
-				p.withLock(func() {
-					p.state.Waiters--
-				})
-
 				return nil, ErrClosed
 			}
-
-			p.withLock(func() {
-				p.state.InPool--
-				p.state.InUse++
-				p.state.Waiters--
-				p.state.WaitCount++
-				p.state.WaitTime += time.Now().Sub(startTime)
-			})
-
+			p.usedFromPool()
+			p.recordWait(startTime)
 			return wrapper.resource, nil
 
 		case <-ctx.Done():
-			p.withLock(func() {
-				p.state.Waiters--
-			})
-
 			return nil, ErrTimeout
 
 		case <-time.After(100 * time.Millisecond):
@@ -316,14 +319,32 @@ func (p *FastPool) getQueued(ctx context.Context) (Resource, error) {
 				continue
 			} else if err != nil {
 				return nil, err
-			} else {
-				return wrapper.resource, nil
 			}
+
+			p.recordWait(startTime)
+			return wrapper.resource, nil
 		}
 	}
 }
 
-// Put will return a resource to the pool. For every successful Get,
+// recordWait records how long a caller waited for a resource to be available in the pool.
+func (p *FastPool) recordWait(startTime time.Time) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.state.WaitCount++
+	p.state.WaitTime += time.Now().Sub(startTime)
+}
+
+// usedFromPool moves a resource from `InPool` to `InUse`.
+func (p *FastPool) usedFromPool() {
+	defer p.Unlock()
+	p.Lock()
+	p.state.InPool--
+	p.state.InUse++
+}
+
+// Put back a resource into the pool. For every successful Get,
 // a corresponding Put is required. If you no longer need a resource,
 // you will need to call Put(nil) instead of returning the closed resource.
 // The will eventually cause a new resource to be created in its place.
@@ -372,64 +393,56 @@ func (p *FastPool) Put(resource Resource) {
 //
 // A SetCapacity of 0 is equivalent to closing the pool.
 func (p *FastPool) SetCapacity(capacity int, block bool) error {
+	err := p.setCapacityHandle(capacity)
+	if err != nil {
+		return err
+	}
+	if !p.State().Draining {
+		return nil
+	}
+
+	if block {
+		p.shrink()
+	} else {
+		go p.shrink()
+	}
+
+	return nil
+}
+
+// setCapacityHandle is used by SetCapacity to do sanity checks and change
+// state appropriately, while locking the state. It will also let the caller know
+// if the pool needs to shrink.
+func (p *FastPool) setCapacityHandle(capacity int) error {
 	p.Lock()
 	defer p.Unlock()
 
 	if p.state.Closed {
 		return ErrClosed
 	}
-
 	if capacity < 0 || capacity > cap(p.pool) {
 		return fmt.Errorf("capacity %d is out of range", capacity)
 	}
-
 	if capacity > 0 {
 		minActive := p.state.MinActive
 		if capacity < minActive {
 			return fmt.Errorf("minActive %v would now be higher than capacity %v", minActive, capacity)
 		}
 	}
-
 	if capacity == 0 {
 		p.state.Closed = true
 	}
 
-	isGrowing := capacity > p.state.Capacity
+	p.state.Draining = capacity < p.state.Capacity
 	p.state.Capacity = capacity
-
-	if isGrowing {
-		p.state.Draining = false
-		return nil
-	}
-
-	p.state.Draining = true
-
-	if block {
-		p.shrink()
-	} else {
-		go p.withLock(p.shrink)
-	}
-
 	return nil
 }
 
-// shrink active resources until capacity it is not above the set capacity.
-// Requires the pool mutex to be locked when calling.
+// shrink active resources until the active count is not above capacity.
 func (p *FastPool) shrink() {
-	for {
-		remaining := p.active() - p.state.Capacity
-		if remaining <= 0 {
-			p.state.Draining = false
-			if p.state.Capacity == 0 {
-				close(p.pool)
-				p.state.Closed = true
-			}
-			return
-		}
-
+	for p.continueShrink() {
 		// We can't remove InUse resources, so only target the pool.
 		// Collect the InUse resources lazily when they're returned.
-		p.Unlock()
 		select {
 		case wrapper := <-p.pool:
 			wrapper.resource.Close()
@@ -439,12 +452,30 @@ func (p *FastPool) shrink() {
 				p.state.InPool--
 			})
 
-		case <-time.After(time.Second):
+		case <-time.After(100 * time.Millisecond):
 			// Someone could have pulled from the pool just before
 			// we started waiting. Let's check the pool status again.
 		}
-		p.Lock()
 	}
+}
+
+// continueShrink lets `shrink()` know to keep shrinking. It will also
+// set the pool state to closed when drained the capacity is 0.
+func (p *FastPool) continueShrink() bool {
+	p.Lock()
+	defer p.Unlock()
+
+	remaining := p.active() - p.state.Capacity
+	if remaining > 0 {
+		return true
+	}
+
+	p.state.Draining = false
+	if p.state.Capacity == 0 {
+		close(p.pool)
+		p.state.Closed = true
+	}
+	return false
 }
 
 // SetIdleTimeout sets the idle timeout for resources. The timeout is
@@ -465,7 +496,7 @@ func (p *FastPool) closeIdleResources() {
 
 		if timeout == 0 {
 			// Wait for an updated idleTimeout.
-			time.Sleep(time.Second)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
@@ -532,8 +563,9 @@ func (p *FastPool) closeIdleResources() {
 
 func (p *FastPool) withLock(f func()) {
 	p.Lock()
+	defer p.Unlock()
+
 	f()
-	p.Unlock()
 }
 
 // StatsJSON returns the stats in JSON format.

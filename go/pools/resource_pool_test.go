@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 	"vitess.io/vitess/go/sync2"
 )
@@ -565,4 +566,40 @@ func TestExpired(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Errorf("got %v, want %s", err, want)
 	}
+}
+
+func TestPanicStringCreateFactory(t *testing.T) {
+	p := NewResourcePool(PanicStringCreateFactory, 10, 10, 0)
+	require.Panics(t, func() {
+		_, _ = p.Get(context.Background())
+	})
+	//p.Close() // This will hang due to a race condition.
+}
+
+func TestPanicErrorCreateFactory(t *testing.T) {
+	p := NewResourcePool(PanicErrorCreateFactory, 10, 10, 0)
+	require.Panics(t, func() {
+		_, _ = p.Get(context.Background())
+	})
+	//p.Close() // This will hang due to a race condition.
+}
+
+func TestPanicStringCloseFactory(t *testing.T) {
+	p := NewResourcePool(PanicStringCloseFactory, 10, 10, 0)
+	r, err := p.Get(context.Background())
+	require.NoError(t, err)
+	p.Put(r)
+	require.Panics(t, func() {
+		p.Close()
+	})
+}
+
+func TestPanicErrorCloseFactory(t *testing.T) {
+	p := NewResourcePool(PanicErrorCloseFactory, 10, 10, 0)
+	r, err := p.Get(context.Background())
+	require.NoError(t, err)
+	p.Put(r)
+	require.Panics(t, func() {
+		p.Close()
+	})
 }

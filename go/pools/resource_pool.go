@@ -34,19 +34,20 @@ var _ Pool = &ResourcePool{}
 
 // ResourcePool allows you to use a pool of resources.
 type ResourcePool struct {
-  // stats. Atomic fields must remain at the top in order to prevent panics on certain architectures.
-  available  sync2.AtomicInt64
-  active     sync2.AtomicInt64
-  inUse      sync2.AtomicInt64
-  waitCount  sync2.AtomicInt64
-  waitTime   sync2.AtomicDuration
-  idleClosed sync2.AtomicInt64
+	// stats. Atomic fields must remain at the top in order to prevent panics on certain architectures.
+	available  sync2.AtomicInt64
+	active     sync2.AtomicInt64
+	inUse      sync2.AtomicInt64
+	waitCount  sync2.AtomicInt64
+	waitTime   sync2.AtomicDuration
+	idleClosed sync2.AtomicInt64
 
-	resources   chan resourceWrapper
-	factory     CreateFactory
 	capacity    sync2.AtomicInt64
 	idleTimeout sync2.AtomicDuration
-	idleTimer   *timer.Timer
+
+	resources chan resourceWrapper
+	factory   CreateFactory
+	idleTimer *timer.Timer
 }
 
 // NewResourcePool creates a new ResourcePool pool.
@@ -205,7 +206,7 @@ func (rp *ResourcePool) Put(resource Resource) {
 // to be shrunk, SetCapacity waits till the necessary
 // number of resources are returned to the pool.
 // A SetCapacity of 0 is equivalent to closing the ResourcePool.
-func (rp *ResourcePool) SetCapacity(capacity int, block bool) error {
+func (rp *ResourcePool) SetCapacity(capacity int, _ bool) error {
 	if capacity < 0 || capacity > cap(rp.resources) {
 		return fmt.Errorf("capacity %d is out of range", capacity)
 	}

@@ -153,7 +153,6 @@ func TestFastPoolConnPoolSetCapacity(t *testing.T) {
 	}
 }
 
-
 func TestConnPoolStatJSON(t *testing.T) {
 	db := fakesqldb.New(t)
 	defer db.Close()

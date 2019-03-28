@@ -17,12 +17,14 @@ limitations under the License.
 package pools
 
 import (
-	"github.com/stretchr/testify/require"
 	"math/rand"
 	"runtime"
 	"testing"
 	"time"
+	"vitess.io/vitess/go/vt/proto/vtrpc"
+	"vitess.io/vitess/go/vt/vterrors"
 
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
 
@@ -47,6 +49,36 @@ func (r *SlowCloseResource) Close() {
 func SlowCloseFactory() (Resource, error) {
 	count.Add(1)
 	return &SlowCloseResource{lastID.Add(1), false}, nil
+}
+
+func PanicStringCreateFactory() (Resource, error) {
+	panic("resource")
+	return &TestResource{}, nil
+}
+
+func PanicErrorCreateFactory() (Resource, error) {
+	panic(vterrors.New(vtrpc.Code_DATA_LOSS, "oh no"))
+	return &TestResource{}, nil
+}
+
+type PanicCloseResource struct {
+	panicWithString bool
+}
+
+func PanicStringCloseFactory() (Resource, error) {
+	return &PanicCloseResource{panicWithString: true}, nil
+}
+
+func PanicErrorCloseFactory() (Resource, error) {
+	return &PanicCloseResource{panicWithString: false}, nil
+}
+
+func (r *PanicCloseResource) Close() {
+	if r.panicWithString {
+		panic("close string panic")
+	} else {
+		panic(vterrors.New(vtrpc.Code_DATA_LOSS, "close error panic"))
+	}
 }
 
 func get(t *testing.T, p *FastPool) Resource {
@@ -872,11 +904,10 @@ func TestFastMinActiveOverCapacity(t *testing.T) {
 	for finish.After(time.Now()) {
 		time.Sleep(time.Millisecond * 10)
 		p.withLock(func() {
-			require.True(t, p.state.Capacity >= p.state.InPool + p.state.InUse + p.state.Spawning)
+			require.True(t, p.state.Capacity >= p.state.InPool+p.state.InUse+p.state.Spawning)
 		})
 	}
 }
-
 
 func TestFastMinActiveTooHighAfterSetCapacity(t *testing.T) {
 	p := NewFastPool(FailFactory, 3, 3, time.Second, 2)
@@ -917,4 +948,81 @@ func TestFastGetPutRace(t *testing.T) {
 		<-done
 		<-done
 	}
+}
+
+func TestFastWithLockPanic(t *testing.T) {
+	p := NewFastPool(PoolFactory, 1, 1, 0, 0)
+	defer func() {
+		t.Helper()
+		require.NotNil(t, recover())
+		p.Close()
+	}()
+
+	p.withLock(func() {
+		panic("oh noes")
+	})
+}
+
+func TestFastPanicStringCreateFactory(t *testing.T) {
+	p := NewFastPool(PanicStringCreateFactory, 10, 10, 0, 0)
+	require.Panics(t, func() {
+		_, _ = p.Get(context.Background())
+	})
+	p.Close()
+}
+
+func TestFastPanicErrorCreateFactory(t *testing.T) {
+	p := NewFastPool(PanicErrorCreateFactory, 10, 10, 0, 0)
+	require.Panics(t, func() {
+		_, _ = p.Get(context.Background())
+	})
+	p.Close()
+}
+
+func TestFastPanicStringCloseFactory(t *testing.T) {
+	p := NewFastPool(PanicStringCloseFactory, 10, 10, 0, 0)
+	r := get(t, p)
+	p.Put(r)
+	require.Panics(t, func() {
+		p.Close()
+	})
+}
+
+func TestFastPanicErrorCloseFactory(t *testing.T) {
+	p := NewFastPool(PanicErrorCloseFactory, 10, 10, 0, 0)
+	r := get(t, p)
+	p.Put(r)
+	require.Panics(t, func() {
+		p.Close()
+	})
+}
+
+func TestGetQueuedRace(t *testing.T) {
+	p := NewFastPool(PoolFactory, 10, 10, 0, 0)
+	r, err := p.getQueued(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, State{Capacity: 10, InUse: 1, WaitCount: 1, WaitTime: p.State().WaitTime}, p.State())
+	p.Put(r)
+	p.Close()
+}
+
+func TestGetQueuedRaceClosed(t *testing.T) {
+	p := NewFastPool(PoolFactory, 10, 10, 0, 0)
+	p.withLock(func() {
+		p.state.Closed = true
+	})
+	r, err := p.getQueued(context.Background())
+	require.EqualError(t, err, "resource pool is closed")
+	require.Equal(t, State{Capacity: 10, Closed: true}, p.State())
+	p.Put(r)
+	p.Close()
+}
+
+func TestGetQueuedRaceError(t *testing.T) {
+	p := NewFastPool(FailFactory, 10, 10, 0, 0)
+	r, err := p.getQueued(context.Background())
+	require.EqualError(t, err, "Failed")
+	require.Equal(t, State{Capacity: 10}, p.State())
+	p.Put(r)
+	p.Close()
 }
