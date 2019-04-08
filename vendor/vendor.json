@@ -931,6 +931,60 @@
 			"revisionTime": "2016-05-24T23:42:29Z"
 		},
 		{
+			"checksumSHA1": "A1iZGfzQSkubmEozIdN+MooYP5Q=",
+			"path": "github.com/systay/go-concurrency-limits",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "fVXi+0X4D8fSWQmlozH4/2H4moM=",
+			"path": "github.com/systay/go-concurrency-limits/core",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "qcY3/nn+drC/E+3+ZQPOygMPJvc=",
+			"path": "github.com/systay/go-concurrency-limits/grpc",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "AGFl+BLF6QI0oD7BnXLfsjfSdCw=",
+			"path": "github.com/systay/go-concurrency-limits/limit",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "sSvUAqagPS7txl+lIRyG84ztOBQ=",
+			"path": "github.com/systay/go-concurrency-limits/limit/functions",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "A0+eh+OCKxg1QKEk7E4XGk0D9E4=",
+			"path": "github.com/systay/go-concurrency-limits/limiter",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "78dzdqhNyjnzp81fBHAAj0Ucv2s=",
+			"path": "github.com/systay/go-concurrency-limits/measurements",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "areNQwR0dPjhitN5iyqa88uWMoQ=",
+			"path": "github.com/systay/go-concurrency-limits/strategy",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
+			"checksumSHA1": "B3RnIl3nG6hwmRStWsZFKOE7wjE=",
+			"path": "github.com/systay/go-concurrency-limits/strategy/matchers",
+			"revision": "b253d67988819c3cb7baff086841d45e93808695",
+			"revisionTime": "2019-04-04T13:41:58Z"
+		},
+		{
 			"checksumSHA1": "fi13nRs6FDnhY5kL/9eMcNF8rQ8=",
 			"path": "github.com/tchap/go-patricia/patricia",
 			"revision": "dd168db6051b704a01881df7e003cb7ec9a7a440",
