@@ -568,8 +568,10 @@ func (hc *HealthCheckImpl) checkConn(hcc *healthCheckConn, name string) {
 
 		// Streaming RPC failed e.g. because vttablet was restarted or took too long.
 		// Sleep until the next retry is up or the context is done/canceled.
+		log.Infof("healthcheck connection is disconnected for tablet %s", name)
 		select {
 		case <-hcc.ctx.Done():
+			log.Infof("healthcheck connection was closed for tablet %s", name)
 			return
 		case <-time.After(retryDelay):
 			// Exponentially back-off to prevent tight-loop.
@@ -578,6 +580,7 @@ func (hc *HealthCheckImpl) checkConn(hcc *healthCheckConn, name string) {
 			if retryDelay > hc.healthCheckTimeout {
 				retryDelay = hc.healthCheckTimeout
 			}
+			log.Infof("finished retry delay for tablet %s, new backoff set to %v", name, retryDelay)
 		}
 	}
 }
