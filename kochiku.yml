@@ -4,3 +4,4 @@ retry_count: 1
 targets:
 - type: promote_docker_image
 - type: cloud_vitess
+- type: jdbc

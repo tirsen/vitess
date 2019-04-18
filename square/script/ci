@@ -15,5 +15,9 @@ case "$TEST_RUNNER" in
     square/script/ci-cloud-docker
     exit
     ;;
+  jdbc)
+    square/script/ci-jdbc
+    exit
+    ;;
 esac
 

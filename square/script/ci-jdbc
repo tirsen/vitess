@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -ex
+
+SHA="$(git rev-parse HEAD)"
+
+# TODO(jontirsen): Parse this out of the pom.xml
+BASE_VERSION=3.1.0
+VERSION=$BASE_VERSION-square-$SHA
+
+cd java
+mvn versions:set -DnewVersion=$VERSION
+mvn versions:update-child-modules
+cat ~/.m2/settings.xml
+mvn deploy -DskipTests -DaltDeploymentRepository=jar-releases::default::https://maven.global.square/artifactory/releases/
+
+echo "Uploaded jdbc driver version $VERSION"
