@@ -19,6 +19,7 @@ package vindexes
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -103,6 +104,36 @@ func (lkp *lookupInternal) Verify(vcursor VCursor, ids, values []sqltypes.Value)
 	return out, nil
 }
 
+type sorter struct {
+	rowsColValues [][]sqltypes.Value
+	toValues      []sqltypes.Value
+}
+
+func (v *sorter) Len() int {
+	return len(v.toValues)
+}
+
+func (v *sorter) Less(i, j int) bool {
+	leftRow := v.rowsColValues[i]
+	rightRow := v.rowsColValues[j]
+	for cell, left := range leftRow {
+		right := rightRow[cell]
+		compare := bytes.Compare(left.ToBytes(), right.ToBytes())
+		if compare < 0 {
+			return true
+		}
+		if compare > 0 {
+			return false
+		}
+	}
+	return bytes.Compare(v.toValues[i].ToBytes(), v.toValues[j].ToBytes()) < 0
+}
+
+func (v *sorter) Swap(i, j int) {
+	v.toValues[i], v.toValues[j] = v.toValues[j], v.toValues[i]
+	v.rowsColValues[i], v.rowsColValues[j] = v.rowsColValues[j], v.rowsColValues[i]
+}
+
 // Create creates an association between rowsColValues and toValues by inserting rows in the vindex table.
 // rowsColValues contains all the rows that are being inserted.
 // For each row, we store the value of each column defined in the vindex.
@@ -135,6 +166,7 @@ func (lkp *lookupInternal) Create(vcursor VCursor, rowsColValues [][]sqltypes.Va
 	fmt.Fprintf(buf, "%s) values(", lkp.To)
 
 	bindVars := make(map[string]*querypb.BindVariable, 2*len(rowsColValues))
+	sort.Sort(&sorter{rowsColValues: rowsColValues, toValues: toValues})
 	for rowIdx := range toValues {
 		colIds := rowsColValues[rowIdx]
 		if rowIdx != 0 {
