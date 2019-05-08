@@ -107,15 +107,22 @@ func insertRowsInShards(ctx context.Context, topoServer *topo.Server, tableName 
 				val = row.Values[offset : offset+row.Lengths[i]]
 			}
 
-			value, err := sqltypes.NewValue(typ, val)
-			logAndExitIfError(err)
+			var value sqltypes.Value
+			if val != nil {
+				value = sqltypes.MakeTrusted(typ, val)
+			} else {
+				value = sqltypes.NULL
+			}
+
 			values[i] = encodeSQL(value)
 
 			if field.Name == *shardingKeyColumn {
 				destTablet, err = getDestinationTablet(ctx, topoServer, value, allShards, targetKeyspace, vschema)
 			}
 
-			offset += row.Lengths[i]
+			if row.Lengths[i] > 0 {
+				offset += row.Lengths[i]
+			}
 		}
 
 		insertSql := fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES (%s)",
